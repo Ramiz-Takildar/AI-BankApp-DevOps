@@ -414,10 +414,12 @@ Private Subnets:
 - `argocd` - GitOps controller
 - `cert-manager` - Certificate management
 - `envoy-gateway-system` - API Gateway
+- `monitoring` - Prometheus & Grafana stack
 
 **Deployments:**
 - `bankapp` - 3 replicas (Spring Boot app)
 - `mysql` - 1 replica (Database)
+- `kube-prometheus-stack` - Monitoring components
 
 **Services:**
 - `bankapp-service` - ClusterIP (internal)
@@ -501,7 +503,59 @@ For complete step-by-step deployment instructions, see:
 
 ## 📊 Monitoring & Observability
 
-### Health Checks
+### Monitoring Stack (kube-prometheus-stack)
+
+**Components Deployed:**
+- ✅ **Prometheus** - Metrics collection and storage
+- ✅ **Grafana** - Visualization and dashboards
+- ✅ **Alertmanager** - Alert routing and management
+- ✅ **Node Exporters** - Hardware and OS metrics (10 pods)
+- ✅ **Kube State Metrics** - Kubernetes object metrics
+
+**Installation:**
+```bash
+# Add Prometheus Helm repository
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# Install monitoring stack
+helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  --create-namespace \
+  --set grafana.service.type=LoadBalancer \
+  --timeout=10m
+```
+
+### Grafana Dashboard Access
+
+**Get Grafana URL:**
+```bash
+kubectl get svc kube-prometheus-grafana -n monitoring \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+**Get Admin Password:**
+```bash
+kubectl get secret kube-prometheus-grafana -n monitoring \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+**Login:** `admin` / `<password from above>`
+
+### Pre-configured Dashboards
+
+**Kubernetes Monitoring:**
+- `Kubernetes / Compute Resources / Cluster` - Overall cluster metrics
+- `Kubernetes / Compute Resources / Namespace (Pods)` - Per-namespace metrics
+- `Kubernetes / Compute Resources / Node (Pods)` - Per-node metrics
+- `Node Exporter / Nodes` - Hardware and OS metrics
+
+**Monitor BankApp:**
+1. Navigate to: `Kubernetes / Compute Resources / Namespace (Pods)`
+2. Select namespace: `bankapp`
+3. View metrics: CPU, memory, network I/O, restart count
+
+### Application Health Checks
 
 **Liveness Probe:**
 ```yaml
@@ -532,6 +586,15 @@ limits:
   memory: "512Mi"
   cpu: "500m"
 ```
+
+### Key Metrics to Monitor
+
+- **CPU Usage** - Track application and node CPU utilization
+- **Memory Usage** - Monitor memory consumption and potential leaks
+- **Network I/O** - Observe traffic patterns and bandwidth
+- **Pod Restarts** - Identify stability issues
+- **Request Latency** - Application response times
+- **Error Rates** - Track failed requests and errors
 
 ### ArgoCD Dashboard
 
@@ -646,6 +709,28 @@ AI-BankApp-DevOps/
 
 ---
 
+## 📊 Service Access Summary
+
+| Service | Access Method | Credentials |
+|---------|--------------|-------------|
+| **BankApp** | `https://bankapp.aicloudops.in` | Application-specific |
+| **ArgoCD** | `kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'` | admin / (from secret) |
+| **Grafana** | `kubectl get svc kube-prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'` | admin / (from secret) |
+| **Prometheus** | `kubectl port-forward -n monitoring svc/kube-prometheus-kube-prome-prometheus 9090:9090` | No authentication |
+
+**Get Secrets:**
+```bash
+# ArgoCD admin password
+kubectl get secret argocd-initial-admin-secret -n argocd \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+
+# Grafana admin password
+kubectl get secret kube-prometheus-grafana -n monitoring \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+---
+
 ## 🎓 Learning Resources
 
 ### GitOps
@@ -663,6 +748,11 @@ AI-BankApp-DevOps/
 ### Infrastructure as Code
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 - [EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
+
+### Monitoring & Observability
+- [Prometheus Documentation](https://prometheus.io/docs/)
+- [Grafana Documentation](https://grafana.com/docs/)
+- [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
 
 ---
 
