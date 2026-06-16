@@ -1,0 +1,18 @@
+# TLS Certificate for bankapp domain
+# cert-manager will automatically request and renew this certificate from Let's Encrypt
+# Prerequisites: 
+# - cert-manager installed with --enable-gateway-api flag
+# - ClusterIssuer (letsencrypt-prod) created
+# - DNS A record configured and propagated
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bankapp-tls
+  namespace: bankapp
+spec:
+  secretName: bankapp-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - bankapp.aicloudops.in
