@@ -134,10 +134,17 @@ image: YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest
 hostname: bankapp.yourdomain.com
 ```
 
+**File: k8s/certificate.yml**
+```yaml
+# Change dnsNames to your domain:
+dnsNames:
+  - bankapp.yourdomain.com
+```
+
 **Commit and push:**
 ```bash
-git add k8s/bankapp-deployment.yml k8s/gateway.yml
-git commit -m "Update image and domain configuration"
+git add k8s/bankapp-deployment.yml k8s/gateway.yml k8s/certificate.yml
+git commit -m "Update image, domain, and certificate configuration"
 git push origin feat/gitops
 ```
 
@@ -168,7 +175,61 @@ docker buildx build --platform linux/amd64 \
 docker pull YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest
 ```
 
-### 8️⃣ Deploy via ArgoCD
+### 8️⃣ Get LoadBalancer IP Address
+
+```bash
+# Get LoadBalancer hostname
+kubectl get gateway bankapp-gateway -n bankapp \
+  -o jsonpath='{.status.addresses[0].value}'
+
+# Example output: a5f49b68eaa524ebfb2b43c72f775e43-1422997363.us-west-2.elb.amazonaws.com
+
+# Resolve to IP addresses
+dig +short <LOADBALANCER_HOSTNAME>
+
+# Example output:
+# 44.232.219.193  ← Use this PRIMARY IP
+# 54.191.22.131
+```
+
+**⚠️ IMPORTANT:** AWS NLB returns multiple IPs. Always use the **FIRST IP** (primary) for DNS configuration.
+
+### 9️⃣ Configure DNS A Record
+
+In your DNS provider (GoDaddy, Cloudflare, Route53, etc.):
+
+**Create A Record:**
+- **Type:** A
+- **Name:** bankapp (or your subdomain)
+- **Value:** `44.232.219.193` (your primary LoadBalancer IP)
+- **TTL:** 300 (5 minutes)
+
+**Example Configuration:**
+```
+Type: A
+Name: bankapp.aicloudops.in
+Value: 44.232.219.193
+TTL: 300
+```
+
+### 🔟 Wait for DNS Propagation
+
+DNS propagation takes 5-15 minutes. Monitor:
+
+```bash
+# Check from Google DNS
+dig +short bankapp.yourdomain.com @8.8.8.8
+
+# Check from Cloudflare DNS
+dig +short bankapp.yourdomain.com @1.1.1.1
+
+# Check from Quad9 DNS
+dig +short bankapp.yourdomain.com @9.9.9.9
+```
+
+All should return your LoadBalancer IP.
+
+### 1️⃣1️⃣ Deploy via ArgoCD
 
 ```bash
 # Apply ArgoCD application from project root
@@ -188,93 +249,11 @@ The Gateway's HTTPS listener will show: `Secret bankapp/bankapp-tls does not exi
 This is **expected behavior** because:
 - ✅ HTTP listener (port 80) is working
 - ✅ All bankapp pods are Running
-- ⚠️ TLS certificate hasn't been issued yet (requires DNS configuration first)
+- ⚠️ TLS certificate will be automatically created by ArgoCD from `k8s/certificate.yml`
 
-The health status will automatically change to **Healthy** after:
-1. DNS A record is configured (Step 10)
-2. DNS propagates (Step 11)
-3. cert-manager issues the TLS certificate
-4. Secret `bankapp/bankapp-tls` is created
-
-**Continue to next step** - the application is ready for DNS configuration!
-
-### 9️⃣ Get LoadBalancer IP Address
-
+**Wait for certificate issuance (1-2 minutes):**
 ```bash
-# Get LoadBalancer hostname
-kubectl get gateway bankapp-gateway -n bankapp \
-  -o jsonpath='{.status.addresses[0].value}'
-
-# Example output: a5f49b68eaa524ebfb2b43c72f775e43-1422997363.us-west-2.elb.amazonaws.com
-
-# Resolve to IP addresses
-dig +short <LOADBALANCER_HOSTNAME>
-
-# Example output:
-# 44.232.219.193  ← Use this PRIMARY IP
-# 54.191.22.131
-```
-
-**⚠️ IMPORTANT:** AWS NLB returns multiple IPs. Always use the **FIRST IP** (primary) for DNS configuration.
-
-### 🔟 Configure DNS A Record
-
-In your DNS provider (GoDaddy, Cloudflare, Route53, etc.):
-
-**Create A Record:**
-- **Type:** A
-- **Name:** bankapp (or your subdomain)
-- **Value:** `44.232.219.193` (your primary LoadBalancer IP)
-- **TTL:** 300 (5 minutes)
-
-**Example Configuration:**
-```
-Type: A
-Name: bankapp.aicloudops.in
-Value: 44.232.219.193
-TTL: 300
-```
-
-### 1️⃣1️⃣ Wait for DNS Propagation
-
-DNS propagation takes 5-15 minutes. Monitor:
-
-```bash
-# Check from Google DNS
-dig +short bankapp.yourdomain.com @8.8.8.8
-
-# Check from Cloudflare DNS
-dig +short bankapp.yourdomain.com @1.1.1.1
-
-# Check from Quad9 DNS
-dig +short bankapp.yourdomain.com @9.9.9.9
-```
-
-All should return your LoadBalancer IP.
-
-### 1️⃣2️⃣ Create TLS Certificate
-
-Once DNS has propagated, create the Certificate resource for Let's Encrypt:
-
-```bash
-# Create Certificate resource
-cat > /tmp/bankapp-certificate.yaml << 'EOF'
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: bankapp-tls
-  namespace: bankapp
-spec:
-  secretName: bankapp-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - bankapp.yourdomain.com
-EOF
-kubectl apply -f /tmp/bankapp-certificate.yaml
-
-# Monitor certificate issuance (takes 1-2 minutes)
+# Monitor certificate creation
 kubectl get certificate bankapp-tls -n bankapp -w
 ```
 
@@ -300,7 +279,7 @@ kubectl patch application bankapp -n argocd --type merge \
 
 **Wait for ArgoCD health status to change from "Degraded" to "Healthy" (~30 seconds)**
 
-### 1️⃣3️⃣ Verify Application Access
+### 1️⃣2️⃣ Verify Application Access
 
 ```bash
 # Test HTTP response
@@ -324,7 +303,7 @@ kubectl get application bankapp -n argocd
 # Should show: SYNC STATUS: Synced, HEALTH STATUS: Healthy
 ```
 
-### 1️⃣4️⃣ Access Your Application
+### 1️⃣3️⃣ Access Your Application
 
 Open browser: 
 - **HTTP:** `http://bankapp.yourdomain.com` (redirects to HTTPS)
