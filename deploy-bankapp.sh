@@ -169,46 +169,46 @@ else
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
         wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
     fi
+
+    # Enable Gateway API support (check if already enabled)
+    print_info "Checking Gateway API support in cert-manager..."
+    GATEWAY_API_ENABLED=$(kubectl get deployment cert-manager -n cert-manager -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -c "enable-gateway-api" || echo "0")
+
+    if [ "$GATEWAY_API_ENABLED" -eq "0" ]; then
+        print_info "Enabling Gateway API support in cert-manager..."
+        kubectl patch deployment cert-manager -n cert-manager --type='json' \
+          -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-gateway-api"}]'
+        
+        print_info "Waiting for cert-manager to restart (60 seconds)..."
+        sleep 10
+        
+        # Wait for old pods to terminate
+        kubectl wait --for=delete pod -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=60s 2>/dev/null || true
+        
+        # Wait for new pods to be ready
+        print_info "Waiting for new cert-manager pods to be ready..."
+        for i in {1..12}; do
+            if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=10s 2>/dev/null; then
+                print_success "cert-manager pods are ready"
+                break
+            fi
+            if [ $i -eq 12 ]; then
+                print_error "Timeout waiting for cert-manager pods. Checking status..."
+                kubectl get pods -n cert-manager
+                print_info "You can re-run this script - it will resume from this step"
+                exit 1
+            fi
+            echo "Attempt $i/12: Waiting for pods..."
+            sleep 5
+        done
+    else
+        print_success "Gateway API support already enabled in cert-manager"
+    fi
+
+    kubectl get pods -n cert-manager
+    print_success "cert-manager installed with Gateway API support"
     save_checkpoint 5
 fi
-
-# Enable Gateway API support (check if already enabled)
-print_info "Checking Gateway API support in cert-manager..."
-GATEWAY_API_ENABLED=$(kubectl get deployment cert-manager -n cert-manager -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -c "enable-gateway-api" || echo "0")
-
-if [ "$GATEWAY_API_ENABLED" -eq "0" ]; then
-    print_info "Enabling Gateway API support in cert-manager..."
-    kubectl patch deployment cert-manager -n cert-manager --type='json' \
-      -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-gateway-api"}]'
-    
-    print_info "Waiting for cert-manager to restart (60 seconds)..."
-    sleep 10
-    
-    # Wait for old pods to terminate
-    kubectl wait --for=delete pod -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=60s 2>/dev/null || true
-    
-    # Wait for new pods to be ready
-    print_info "Waiting for new cert-manager pods to be ready..."
-    for i in {1..12}; do
-        if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=10s 2>/dev/null; then
-            print_success "cert-manager pods are ready"
-            break
-        fi
-        if [ $i -eq 12 ]; then
-            print_error "Timeout waiting for cert-manager pods. Checking status..."
-            kubectl get pods -n cert-manager
-            print_info "You can re-run this script - it will skip completed steps"
-            exit 1
-        fi
-        echo "Attempt $i/12: Waiting for pods..."
-        sleep 5
-    done
-else
-    print_success "Gateway API support already enabled in cert-manager"
-fi
-
-kubectl get pods -n cert-manager
-print_success "cert-manager installed with Gateway API support"
 
 # Step 6-7: Reminder for manual steps
 if is_step_completed 7; then
