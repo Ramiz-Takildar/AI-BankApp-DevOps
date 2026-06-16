@@ -76,11 +76,22 @@ print_success "Gateway API CRDs installed"
 
 # Step 4: Install Envoy Gateway
 print_step "Step 4: Installing Envoy Gateway"
-helm install eg oci://docker.io/envoyproxy/gateway-helm \
-  --version v1.2.6 \
-  -n envoy-gateway-system \
-  --create-namespace \
-  --skip-crds
+
+# Check if Envoy Gateway is already installed
+if helm list -n envoy-gateway-system 2>/dev/null | grep -q "^eg"; then
+    print_info "Envoy Gateway already installed, upgrading..."
+    helm upgrade eg oci://docker.io/envoyproxy/gateway-helm \
+      --version v1.2.6 \
+      -n envoy-gateway-system \
+      --skip-crds
+else
+    print_info "Installing Envoy Gateway..."
+    helm install eg oci://docker.io/envoyproxy/gateway-helm \
+      --version v1.2.6 \
+      -n envoy-gateway-system \
+      --create-namespace \
+      --skip-crds
+fi
 
 wait_for_pods "envoy-gateway-system" "app.kubernetes.io/name=gateway-helm" 60
 
@@ -104,9 +115,15 @@ print_success "Envoy Gateway installed"
 
 # Step 5: Install cert-manager
 print_step "Step 5: Installing cert-manager"
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 
-wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
+# Check if cert-manager is already installed
+if kubectl get namespace cert-manager >/dev/null 2>&1; then
+    print_info "cert-manager already installed, skipping installation..."
+else
+    print_info "Installing cert-manager..."
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+    wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
+fi
 
 # Enable Gateway API support
 print_info "Enabling Gateway API support in cert-manager..."
@@ -310,12 +327,21 @@ if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
     helm repo update prometheus-community
 
-    print_info "Installing kube-prometheus-stack (this takes 2-3 minutes)..."
-    helm install kube-prometheus prometheus-community/kube-prometheus-stack \
-      -n monitoring \
-      --create-namespace \
-      --set grafana.service.type=LoadBalancer \
-      --timeout=10m
+    # Check if monitoring stack is already installed
+    if helm list -n monitoring 2>/dev/null | grep -q "^kube-prometheus"; then
+        print_info "Monitoring stack already installed, upgrading..."
+        helm upgrade kube-prometheus prometheus-community/kube-prometheus-stack \
+          -n monitoring \
+          --set grafana.service.type=LoadBalancer \
+          --timeout=10m
+    else
+        print_info "Installing kube-prometheus-stack (this takes 2-3 minutes)..."
+        helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+          -n monitoring \
+          --create-namespace \
+          --set grafana.service.type=LoadBalancer \
+          --timeout=10m
+    fi
 
     wait_for_pods "monitoring" "release=kube-prometheus" 300
 
