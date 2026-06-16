@@ -260,8 +260,8 @@ print_info "Monitoring certificate creation (this may take 1-2 minutes)..."
 
 # Restart cert-manager to clear any stale connections
 print_info "Restarting cert-manager for fresh connection..."
-kubectl delete pod -n cert-manager -l app=cert-manager
-wait_for_pods "cert-manager" "app=cert-manager" 60
+kubectl delete pod -n cert-manager -l app.kubernetes.io/name=cert-manager
+wait_for_pods "cert-manager" "app.kubernetes.io/name=cert-manager" 60
 
 print_info "Waiting for certificate to be issued..."
 CERT_READY=false
@@ -278,10 +278,34 @@ done
 echo ""
 
 if [ "$CERT_READY" = false ]; then
-    print_error "Certificate not ready yet. Checking status..."
-    kubectl describe certificate bankapp-tls -n bankapp
-    kubectl get challenge -n bankapp
-    print_info "Certificate issuance may take longer. Check ArgoCD and cert-manager logs."
+    print_error "Certificate not ready after 5 minutes. Attempting recovery..."
+    
+    # Check if challenge is stuck
+    CHALLENGE_STATE=$(kubectl get challenge -n bankapp -o jsonpath='{.items[0].status.state}' 2>/dev/null || echo "")
+    if [ "$CHALLENGE_STATE" == "pending" ]; then
+        print_info "Challenge stuck in pending state. Recreating certificate..."
+        kubectl delete certificate bankapp-tls -n bankapp
+        sleep 5
+        kubectl apply -f k8s/certificate.yml
+        
+        print_info "Waiting for new certificate issuance (30 seconds)..."
+        sleep 30
+        
+        CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+        if [ "$CERT_STATUS" == "True" ]; then
+            print_success "Certificate issued successfully after retry!"
+            CERT_READY=true
+        else
+            print_error "Certificate still not ready. Manual intervention may be required."
+            kubectl describe certificate bankapp-tls -n bankapp
+            kubectl get challenge -n bankapp
+        fi
+    else
+        print_error "Certificate not ready. Checking status..."
+        kubectl describe certificate bankapp-tls -n bankapp
+        kubectl get challenge -n bankapp
+        print_info "Certificate issuance may take longer. Check ArgoCD and cert-manager logs."
+    fi
 fi
 
 # Trigger ArgoCD sync
