@@ -574,28 +574,64 @@ dig +short bankapp.yourdomain.com @8.8.8.8
 
 ## 🧹 Cleanup (Destroy Everything)
 
+**⚠️ IMPORTANT:** Use the automated cleanup script for safe and complete resource removal.
+
+### Option 1: Automated Cleanup (Recommended)
+
+```bash
+# Run the cleanup script from project root
+./cleanup.sh
+
+# After cleanup completes, destroy Terraform infrastructure
+cd terraform
+terraform destroy -auto-approve
+```
+
+**What the cleanup script does:**
+1. ✅ Deletes ArgoCD application
+2. ✅ Uninstalls monitoring stack (kube-prometheus)
+3. ✅ Deletes BankApp namespace and resources
+4. ✅ Uninstalls cert-manager
+5. ✅ Uninstalls Envoy Gateway
+6. ✅ Deletes Gateway API CRDs
+7. ✅ Waits for LoadBalancers to terminate
+8. ✅ Verifies cleanup completion
+9. ✅ Checks for orphaned resources
+
+### Option 2: Manual Cleanup
+
 **⚠️ ORDER MATTERS!** Delete Helm resources before Terraform.
 
 ```bash
 # 1. Delete ArgoCD application
 kubectl delete -f argocd/application.yml
 
-# 2. Uninstall Helm releases
-helm uninstall cert-manager -n cert-manager
-helm uninstall eg -n envoy-gateway-system
+# 2. Uninstall monitoring stack
+helm uninstall kube-prometheus -n monitoring
+kubectl delete namespace monitoring
 
-# 3. Delete Gateway API CRDs
+# 3. Delete BankApp namespace
+kubectl delete namespace bankapp
+
+# 4. Uninstall cert-manager
+kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+
+# 5. Uninstall Envoy Gateway
+helm uninstall eg -n envoy-gateway-system
+kubectl delete namespace envoy-gateway-system
+
+# 6. Delete Gateway API CRDs
 kubectl delete -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
 
-# 4. Wait for LoadBalancers to terminate
+# 7. Wait for LoadBalancers to terminate
 echo "Waiting 60 seconds for AWS resources to clean up..."
 sleep 60
 
-# 5. Verify no LoadBalancers remain
+# 8. Verify no LoadBalancers remain
 aws elbv2 describe-load-balancers --region us-west-2 \
   --query 'LoadBalancers[*].LoadBalancerName'
 
-# 6. Destroy Terraform infrastructure
+# 9. Destroy Terraform infrastructure
 cd terraform
 terraform destroy -auto-approve
 ```
