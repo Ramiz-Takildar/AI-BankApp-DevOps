@@ -313,6 +313,83 @@ You should see the login page with a valid SSL certificate! 🎉
 
 ---
 
+## 📊 Install Monitoring Stack (Optional)
+
+### 1️⃣4️⃣ Install kube-prometheus-stack
+
+```bash
+# Add Prometheus Helm repository
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update prometheus-community
+
+# Install kube-prometheus-stack with Grafana LoadBalancer
+helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  --create-namespace \
+  --set grafana.service.type=LoadBalancer \
+  --timeout=10m
+
+# Wait for all pods to be ready
+kubectl wait --for=condition=ready pod -l "release=kube-prometheus" \
+  -n monitoring --timeout=5m
+```
+
+**What gets installed:**
+- Prometheus Operator
+- Prometheus Server (metrics collection)
+- Alertmanager (alert management)
+- Grafana (visualization)
+- Kube State Metrics (Kubernetes metrics)
+- Node Exporters (node-level metrics)
+
+**Time:** ~2-3 minutes
+
+### 1️⃣5️⃣ Access Grafana Dashboard
+
+```bash
+# Get Grafana LoadBalancer URL
+kubectl get svc kube-prometheus-grafana -n monitoring \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# Get Grafana admin password
+kubectl get secret kube-prometheus-grafana -n monitoring \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+**Login Credentials:**
+- **Username:** `admin`
+- **Password:** (from command above)
+
+**Access Grafana:**
+```
+http://<LOADBALANCER_URL>
+```
+
+### 1️⃣6️⃣ Explore Pre-configured Dashboards
+
+Once logged into Grafana:
+
+1. **Navigate to Dashboards** → Browse
+2. **Explore these dashboards:**
+   - `Kubernetes / Compute Resources / Cluster` - Overall cluster metrics
+   - `Kubernetes / Compute Resources / Namespace (Pods)` - Per-namespace pod metrics
+   - `Kubernetes / Compute Resources / Node (Pods)` - Per-node metrics
+   - `Node Exporter / Nodes` - Hardware and OS metrics
+
+3. **Monitor BankApp:**
+   - Go to `Kubernetes / Compute Resources / Namespace (Pods)`
+   - Select namespace: `bankapp`
+   - View CPU, memory, network metrics for your application
+
+**Key Metrics to Monitor:**
+- Pod CPU usage
+- Pod memory usage
+- Network I/O
+- Pod restart count
+- Request rate and latency
+
+---
+
 ## 🔍 Verification Checklist
 
 ```bash
