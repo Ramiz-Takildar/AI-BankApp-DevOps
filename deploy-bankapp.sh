@@ -102,9 +102,9 @@ spec:
 EOF
 kubectl apply -f /tmp/gatewayclass.yaml
 
-# Install complete Envoy Gateway CRDs
+# Install complete Envoy Gateway CRDs (skip if already applied to avoid annotation size error)
 print_info "Installing complete Envoy Gateway CRDs..."
-kubectl apply -f https://github.com/envoyproxy/gateway/releases/download/v1.2.6/install.yaml
+kubectl apply -f https://github.com/envoyproxy/gateway/releases/download/v1.2.6/install.yaml 2>&1 | grep -v "metadata.annotations: Too long" || true
 
 kubectl get gatewayclass eg
 print_success "Envoy Gateway installed"
