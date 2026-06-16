@@ -46,6 +46,92 @@ kubectl get nodes
 
 Expected: 8 nodes in Ready state
 
+---
+
+## 🤖 Automated Deployment (Recommended)
+
+**Use the automated script to deploy steps 3-16 automatically:**
+
+```bash
+# Make script executable
+chmod +x deploy-bankapp.sh
+
+# Run the deployment script
+./deploy-bankapp.sh
+```
+
+**What the script does:**
+- ✅ Installs Gateway API CRDs
+- ✅ Installs Envoy Gateway with proper configuration
+- ✅ Installs cert-manager with Gateway API support
+- ✅ Deploys application via ArgoCD
+- ✅ Gets LoadBalancer IP and displays it prominently
+- ✅ Waits for DNS configuration (interactive pause)
+- ✅ Monitors certificate issuance with automatic retry
+- ✅ Verifies application access
+- ✅ Optionally installs monitoring stack
+
+**Script Features:**
+- **Idempotent:** Safe to re-run without errors
+- **Auto-recovery:** Automatically retries stuck certificate challenges
+- **Color-coded output:** Easy to follow progress
+- **Interactive pauses:** Waits for DNS configuration
+- **Comprehensive checks:** Validates each step before proceeding
+
+**Time:** ~15-20 minutes (including DNS propagation wait)
+
+### Script Usage Examples
+
+**Basic Usage:**
+```bash
+./deploy-bankapp.sh
+```
+
+**Common Scenarios:**
+
+**1. First-time Deployment:**
+```bash
+# Ensure you've completed prerequisites (Steps 1-2)
+# Update manifests with your domain and DockerHub username
+# Build and push Docker image
+./deploy-bankapp.sh
+```
+
+**2. Re-running After Failure:**
+```bash
+# Script is idempotent - safe to re-run
+# It will skip already installed components
+./deploy-bankapp.sh
+```
+
+**3. Certificate Issues:**
+```bash
+# Script automatically detects and fixes stuck certificates
+# If certificate fails, script will:
+# - Detect pending challenge
+# - Delete and recreate certificate
+# - Wait for fresh issuance
+```
+
+**4. Monitoring Installation:**
+```bash
+# Script will prompt for monitoring installation
+# Answer 'y' to install Grafana/Prometheus
+# Answer 'n' to skip
+```
+
+**Script Output:**
+- ✅ Green: Success messages
+- ℹ️ Yellow: Information and prompts
+- ❌ Red: Errors (script will attempt recovery)
+- 🔵 Blue: Step headers
+
+---
+
+## 📝 Manual Deployment Steps
+
+If you prefer manual deployment or need to troubleshoot, follow these detailed steps:
+
 ### 3️⃣ Install Gateway API CRDs
 
 ```bash
@@ -580,16 +666,85 @@ kubectl get crd | grep cert-manager
 
 **Symptom:** `kubectl get certificate -n bankapp` shows `Ready: False`
 
+**Causes & Solutions:**
+
+**1. Challenge Stuck in Pending State**
+
+This is the most common issue. The ACME challenge gets stuck and never completes.
+
+**Symptoms:**
+```bash
+kubectl get challenge -n bankapp
+# Shows: STATE: pending for more than 5 minutes
+```
+
+**Automatic Fix (in deploy-bankapp.sh):**
+The deployment script automatically detects and fixes this by:
+1. Detecting stuck challenge (pending > 5 minutes)
+2. Deleting the certificate
+3. Recreating the certificate
+4. Waiting 30 seconds for fresh issuance
+
+**Manual Fix:**
+```bash
+# Delete stuck certificate
+kubectl delete certificate bankapp-tls -n bankapp
+
+# Recreate certificate
+kubectl apply -f k8s/certificate.yml
+
+# Wait 30 seconds
+sleep 30
+
+# Check status
+kubectl get certificate bankapp-tls -n bankapp
+```
+
+**2. DNS Not Propagated**
+
+**Check DNS:**
+```bash
+dig +short bankapp.yourdomain.com @8.8.8.8
+# Should return your LoadBalancer IP
+```
+
+**3. cert-manager Not Restarted After DNS Change**
+
 **Solution:**
 ```bash
-# Check certificate status
-kubectl describe certificate bankapp-tls -n bankapp
+# Restart cert-manager pods
+kubectl delete pod -n cert-manager -l app.kubernetes.io/name=cert-manager
+
+# Wait for restart
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cert-manager \
+  -n cert-manager --timeout=60s
+```
+
+**4. Gateway API Support Not Enabled**
+
+**Verify:**
+```bash
+kubectl get deployment cert-manager -n cert-manager -o yaml | grep enable-gateway-api
+# Should show: --enable-gateway-api
+```
+
+**Fix:**
+```bash
+kubectl patch deployment cert-manager -n cert-manager --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-gateway-api"}]'
+```
+
+**5. Check Challenge Details**
+
+```bash
+# Get challenge status
+kubectl describe challenge -n bankapp
+
+# Check ACME solver pod logs
+kubectl logs -n bankapp -l acme.cert-manager.io/http01-solver=true
 
 # Check cert-manager logs
-kubectl logs -n cert-manager -l app=cert-manager
-
-# Verify DNS propagated
-dig +short bankapp.yourdomain.com @8.8.8.8
+kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager
 ```
 
 ---
