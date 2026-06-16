@@ -7,7 +7,6 @@ on:
       - 'src/**'
       - 'pom.xml'
       - 'Dockerfile'
-      - 'k8s/**'
   workflow_dispatch:
 
 permissions:
