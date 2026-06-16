@@ -101,6 +101,13 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager \
   -n cert-manager --timeout=60s
 
+# Enable Gateway API support (CRITICAL for TLS certificate issuance)
+kubectl patch deployment cert-manager -n cert-manager --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-gateway-api"}]'
+
+# Wait for cert-manager to restart with new configuration
+kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=60s
+
 # Verify installation
 kubectl get pods -n cert-manager
 kubectl get crd | grep cert-manager
@@ -109,6 +116,7 @@ kubectl get crd | grep cert-manager
 **Expected Output:**
 - All 3 pods (cert-manager, cainjector, webhook) should be Running
 - 6 CRDs should be installed
+- cert-manager deployment should have `--enable-gateway-api` flag
 
 ### 6️⃣ Update Kubernetes Manifests
 
@@ -244,29 +252,85 @@ dig +short bankapp.yourdomain.com @9.9.9.9
 
 All should return your LoadBalancer IP.
 
-### 1️⃣2️⃣ Verify Application Access
+### 1️⃣2️⃣ Create TLS Certificate
+
+Once DNS has propagated, create the Certificate resource for Let's Encrypt:
+
+```bash
+# Create Certificate resource
+cat > /tmp/bankapp-certificate.yaml << 'EOF'
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bankapp-tls
+  namespace: bankapp
+spec:
+  secretName: bankapp-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - bankapp.yourdomain.com
+EOF
+kubectl apply -f /tmp/bankapp-certificate.yaml
+
+# Monitor certificate issuance (takes 1-2 minutes)
+kubectl get certificate bankapp-tls -n bankapp -w
+```
+
+**Expected Progress:**
+1. Certificate shows `Ready: False` with reason `DoesNotExist`
+2. CertificateRequest is created
+3. ACME Order is created
+4. HTTP-01 Challenge is created and validated
+5. Certificate shows `Ready: True`
+
+**Verify TLS certificate:**
+```bash
+# Check certificate status
+kubectl get certificate bankapp-tls -n bankapp
+
+# Check secret was created
+kubectl get secret bankapp-tls -n bankapp
+
+# Trigger ArgoCD sync to update health status
+kubectl patch application bankapp -n argocd --type merge \
+  -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+```
+
+**Wait for ArgoCD health status to change from "Degraded" to "Healthy" (~30 seconds)**
+
+### 1️⃣3️⃣ Verify Application Access
 
 ```bash
 # Test HTTP response
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://bankapp.yourdomain.com/
+curl -s -o /dev/null -w "HTTP: %{http_code}\n" http://bankapp.yourdomain.com/
 
-# Expected: HTTP 302 (redirect to /login)
+# Test HTTPS response
+curl -s -o /dev/null -w "HTTPS: %{http_code}\n" https://bankapp.yourdomain.com/
 
-# Verbose test
-curl -v http://bankapp.yourdomain.com/
+# Expected: Both return 302 (redirect to /login)
 ```
 
 **Expected Response:**
 ```
-HTTP/1.1 302 Found
-location: http://bankapp.yourdomain.com/login
+HTTP: 302
+HTTPS: 302
 ```
 
-### 1️⃣3️⃣ Access Your Application
+**Verify ArgoCD application is Healthy:**
+```bash
+kubectl get application bankapp -n argocd
+# Should show: SYNC STATUS: Synced, HEALTH STATUS: Healthy
+```
 
-Open browser: `http://bankapp.yourdomain.com`
+### 1️⃣4️⃣ Access Your Application
 
-You should see the login page! 🎉
+Open browser: 
+- **HTTP:** `http://bankapp.yourdomain.com` (redirects to HTTPS)
+- **HTTPS:** `https://bankapp.yourdomain.com` (secure connection with Let's Encrypt certificate)
+
+You should see the login page with a valid SSL certificate! 🎉
 
 ---
 
@@ -282,16 +346,25 @@ kubectl get gateway -n bankapp
 # Check HTTPRoute
 kubectl get httproute -n bankapp
 
+# Check TLS Certificate
+kubectl get certificate bankapp-tls -n bankapp
+
 # Check ArgoCD application
 kubectl get application bankapp -n argocd
 ```
 
 **Success Criteria:**
-- ✅ 3 bankapp pods in Running state
+- ✅ 4 bankapp pods in Running state
+- ✅ MySQL pod in Running state
 - ✅ Gateway has LoadBalancer address
-- ✅ DNS resolves to correct IP
-- ✅ Application returns HTTP 302
-- ✅ Login page accessible
+- ✅ Gateway HTTPS listener shows ResolvedRefs: True
+- ✅ DNS resolves to correct LoadBalancer IP
+- ✅ TLS Certificate shows Ready: True
+- ✅ Secret bankapp-tls exists
+- ✅ Application returns HTTP 302 and HTTPS 302
+- ✅ HTTPS connection uses valid Let's Encrypt certificate
+- ✅ ArgoCD shows "Synced" and "Healthy"
+- ✅ Login page accessible via HTTPS
 
 ---
 
