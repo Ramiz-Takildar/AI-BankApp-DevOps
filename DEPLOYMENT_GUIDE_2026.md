@@ -163,7 +163,7 @@ docker pull YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest
 ### 8️⃣ Deploy via ArgoCD
 
 ```bash
-cd terraform
+# Apply ArgoCD application from project root
 kubectl apply -f argocd/application.yml
 
 # Watch deployment progress
