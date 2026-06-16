@@ -126,7 +126,7 @@ print_info "Enabling Gateway API support in cert-manager..."
 kubectl patch deployment cert-manager -n cert-manager --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-gateway-api"}]'
 
-wait_for_pods "cert-manager" "app=cert-manager" 60
+wait_for_pods "cert-manager" "app.kubernetes.io/name=cert-manager" 60
 
 kubectl get pods -n cert-manager
 print_success "cert-manager installed with Gateway API support"
