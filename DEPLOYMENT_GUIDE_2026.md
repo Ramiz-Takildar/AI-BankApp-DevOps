@@ -170,7 +170,25 @@ kubectl apply -f argocd/application.yml
 kubectl get application bankapp -n argocd -w
 ```
 
-Wait until status shows: **Healthy** and **Synced**
+**Expected Status:**
+- SYNC STATUS: **Synced** ✅
+- HEALTH STATUS: **Degraded** ⚠️ (This is NORMAL at this stage)
+
+**Why "Degraded"?**
+The Gateway's HTTPS listener will show: `Secret bankapp/bankapp-tls does not exist`
+
+This is **expected behavior** because:
+- ✅ HTTP listener (port 80) is working
+- ✅ All bankapp pods are Running
+- ⚠️ TLS certificate hasn't been issued yet (requires DNS configuration first)
+
+The health status will automatically change to **Healthy** after:
+1. DNS A record is configured (Step 10)
+2. DNS propagates (Step 11)
+3. cert-manager issues the TLS certificate
+4. Secret `bankapp/bankapp-tls` is created
+
+**Continue to next step** - the application is ready for DNS configuration!
 
 ### 9️⃣ Get LoadBalancer IP Address
 
