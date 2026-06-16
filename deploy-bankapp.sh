@@ -79,11 +79,7 @@ print_step "Step 4: Installing Envoy Gateway"
 
 # Check if Envoy Gateway is already installed
 if helm list -n envoy-gateway-system 2>/dev/null | grep -q "^eg"; then
-    print_info "Envoy Gateway already installed, upgrading..."
-    helm upgrade eg oci://docker.io/envoyproxy/gateway-helm \
-      --version v1.2.6 \
-      -n envoy-gateway-system \
-      --skip-crds
+    print_info "Envoy Gateway already installed, skipping..."
 else
     print_info "Installing Envoy Gateway..."
     helm install eg oci://docker.io/envoyproxy/gateway-helm \
@@ -329,11 +325,7 @@ if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
 
     # Check if monitoring stack is already installed
     if helm list -n monitoring 2>/dev/null | grep -q "^kube-prometheus"; then
-        print_info "Monitoring stack already installed, upgrading..."
-        helm upgrade kube-prometheus prometheus-community/kube-prometheus-stack \
-          -n monitoring \
-          --set grafana.service.type=LoadBalancer \
-          --timeout=10m
+        print_info "Monitoring stack already installed, skipping..."
     else
         print_info "Installing kube-prometheus-stack (this takes 2-3 minutes)..."
         helm install kube-prometheus prometheus-community/kube-prometheus-stack \
