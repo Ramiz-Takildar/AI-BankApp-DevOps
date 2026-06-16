@@ -175,61 +175,9 @@ docker buildx build --platform linux/amd64 \
 docker pull YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest
 ```
 
-### 8️⃣ Get LoadBalancer IP Address
+### 8️⃣ Deploy via ArgoCD
 
-```bash
-# Get LoadBalancer hostname
-kubectl get gateway bankapp-gateway -n bankapp \
-  -o jsonpath='{.status.addresses[0].value}'
-
-# Example output: a5f49b68eaa524ebfb2b43c72f775e43-1422997363.us-west-2.elb.amazonaws.com
-
-# Resolve to IP addresses
-dig +short <LOADBALANCER_HOSTNAME>
-
-# Example output:
-# 44.232.219.193  ← Use this PRIMARY IP
-# 54.191.22.131
-```
-
-**⚠️ IMPORTANT:** AWS NLB returns multiple IPs. Always use the **FIRST IP** (primary) for DNS configuration.
-
-### 9️⃣ Configure DNS A Record
-
-In your DNS provider (GoDaddy, Cloudflare, Route53, etc.):
-
-**Create A Record:**
-- **Type:** A
-- **Name:** bankapp (or your subdomain)
-- **Value:** `44.232.219.193` (your primary LoadBalancer IP)
-- **TTL:** 300 (5 minutes)
-
-**Example Configuration:**
-```
-Type: A
-Name: bankapp.aicloudops.in
-Value: 44.232.219.193
-TTL: 300
-```
-
-### 🔟 Wait for DNS Propagation
-
-DNS propagation takes 5-15 minutes. Monitor:
-
-```bash
-# Check from Google DNS
-dig +short bankapp.yourdomain.com @8.8.8.8
-
-# Check from Cloudflare DNS
-dig +short bankapp.yourdomain.com @1.1.1.1
-
-# Check from Quad9 DNS
-dig +short bankapp.yourdomain.com @9.9.9.9
-```
-
-All should return your LoadBalancer IP.
-
-### 1️⃣1️⃣ Deploy via ArgoCD
+**⚠️ IMPORTANT:** This step creates the Gateway resource and LoadBalancer. Complete this BEFORE getting the LoadBalancer IP.
 
 ```bash
 # Apply ArgoCD application from project root
@@ -249,9 +197,83 @@ The Gateway's HTTPS listener will show: `Secret bankapp/bankapp-tls does not exi
 This is **expected behavior** because:
 - ✅ HTTP listener (port 80) is working
 - ✅ All bankapp pods are Running
-- ⚠️ TLS certificate will be automatically created by ArgoCD from `k8s/certificate.yml`
+- ⚠️ TLS certificate will be automatically created after DNS is configured
 
-**Wait for certificate issuance (1-2 minutes):**
+**Wait for all resources to be created (~2 minutes):**
+```bash
+# Check bankapp namespace was created
+kubectl get namespace bankapp
+
+# Check pods are running
+kubectl get pods -n bankapp
+
+# Check Gateway was created
+kubectl get gateway -n bankapp
+```
+
+**Expected Output:**
+- Namespace `bankapp` exists
+- 4 bankapp pods + 1 MySQL pod in Running state
+- Gateway `bankapp-gateway` exists with LoadBalancer address
+
+### 9️⃣ Get LoadBalancer IP Address
+
+```bash
+# Get LoadBalancer hostname
+kubectl get gateway bankapp-gateway -n bankapp \
+  -o jsonpath='{.status.addresses[0].value}'
+
+# Example output: a5f49b68eaa524ebfb2b43c72f775e43-1422997363.us-west-2.elb.amazonaws.com
+
+# Resolve to IP addresses
+dig +short <LOADBALANCER_HOSTNAME>
+
+# Example output:
+# 44.232.219.193  ← Use this PRIMARY IP
+# 54.191.22.131
+```
+
+**⚠️ IMPORTANT:** AWS NLB returns multiple IPs. Always use the **FIRST IP** (primary) for DNS configuration.
+
+### 🔟 Configure DNS A Record
+
+In your DNS provider (GoDaddy, Cloudflare, Route53, etc.):
+
+**Create A Record:**
+- **Type:** A
+- **Name:** bankapp (or your subdomain)
+- **Value:** `44.232.219.193` (your primary LoadBalancer IP)
+- **TTL:** 300 (5 minutes)
+
+**Example Configuration:**
+```
+Type: A
+Name: bankapp.aicloudops.in
+Value: 44.232.219.193
+TTL: 300
+```
+
+### 1️⃣1️⃣ Wait for DNS Propagation
+
+DNS propagation takes 5-15 minutes. Monitor:
+
+```bash
+# Check from Google DNS
+dig +short bankapp.yourdomain.com @8.8.8.8
+
+# Check from Cloudflare DNS
+dig +short bankapp.yourdomain.com @1.1.1.1
+
+# Check from Quad9 DNS
+dig +short bankapp.yourdomain.com @9.9.9.9
+```
+
+All should return your LoadBalancer IP.
+
+### 1️⃣2️⃣ Wait for Certificate Issuance
+
+**After DNS propagation completes, cert-manager will automatically issue the TLS certificate (1-2 minutes):**
+
 ```bash
 # Monitor certificate creation
 kubectl get certificate bankapp-tls -n bankapp -w
@@ -279,7 +301,7 @@ kubectl patch application bankapp -n argocd --type merge \
 
 **Wait for ArgoCD health status to change from "Degraded" to "Healthy" (~30 seconds)**
 
-### 1️⃣2️⃣ Verify Application Access
+### 1️⃣3️⃣ Verify Application Access
 
 ```bash
 # Test HTTP response
@@ -303,7 +325,7 @@ kubectl get application bankapp -n argocd
 # Should show: SYNC STATUS: Synced, HEALTH STATUS: Healthy
 ```
 
-### 1️⃣3️⃣ Access Your Application
+### 1️⃣4️⃣ Access Your Application
 
 Open browser: 
 - **HTTP:** `http://bankapp.yourdomain.com` (redirects to HTTPS)
@@ -315,7 +337,7 @@ You should see the login page with a valid SSL certificate! 🎉
 
 ## 📊 Install Monitoring Stack (Optional)
 
-### 1️⃣4️⃣ Install kube-prometheus-stack
+### 1️⃣5️⃣ Install kube-prometheus-stack
 
 ```bash
 # Add Prometheus Helm repository
@@ -344,7 +366,7 @@ kubectl wait --for=condition=ready pod -l "release=kube-prometheus" \
 
 **Time:** ~2-3 minutes
 
-### 1️⃣5️⃣ Access Grafana Dashboard
+### 1️⃣6️⃣ Access Grafana Dashboard
 
 ```bash
 # Get Grafana LoadBalancer URL
@@ -365,7 +387,7 @@ kubectl get secret kube-prometheus-grafana -n monitoring \
 http://<LOADBALANCER_URL>
 ```
 
-### 1️⃣6️⃣ Explore Pre-configured Dashboards
+### 1️⃣7️⃣ Explore Pre-configured Dashboards
 
 Once logged into Grafana:
 
