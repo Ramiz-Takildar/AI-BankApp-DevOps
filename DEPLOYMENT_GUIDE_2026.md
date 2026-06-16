@@ -94,40 +94,25 @@ kubectl get gatewayclass eg
 ### 5️⃣ Install cert-manager
 
 ```bash
-helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --set crds.enabled=true \
-  --set config.enableGatewayAPI=true \
-  --wait
+# Install cert-manager using kubectl (Helm has hanging issues)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 
+# Wait for pods to be ready
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager \
+  -n cert-manager --timeout=60s
+
+# Verify installation
 kubectl get pods -n cert-manager
+kubectl get crd | grep cert-manager
 ```
 
-All 3 pods should be Running
+**Expected Output:**
+- All 3 pods (cert-manager, cainjector, webhook) should be Running
+- 6 CRDs should be installed
 
-### 6️⃣ Build and Push Docker Image
+### 6️⃣ Update Kubernetes Manifests
 
-**⚠️ CRITICAL for Apple Silicon (M1/M2/M3):**
-
-```bash
-# Navigate to project root
-cd /path/to/AI-BankApp-DevOps
-
-# Build for amd64 architecture (EKS nodes are amd64)
-docker buildx build --platform linux/amd64 \
-  -t YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest \
-  --push .
-```
-
-**Example:**
-```bash
-docker buildx build --platform linux/amd64 \
-  -t ramiztakildar/ai-bankapp-eks:latest \
-  --push .
-```
-
-### 7️⃣ Update Kubernetes Manifests
+**⚠️ Do this BEFORE building the Docker image!**
 
 **File: k8s/bankapp-deployment.yml**
 ```yaml
@@ -146,6 +131,33 @@ hostname: bankapp.yourdomain.com
 git add k8s/bankapp-deployment.yml k8s/gateway.yml
 git commit -m "Update image and domain configuration"
 git push origin feat/gitops
+```
+
+### 7️⃣ Build and Push Docker Image
+
+**⚠️ CRITICAL for Apple Silicon (M1/M2/M3):**
+
+```bash
+# Navigate to project root
+cd /path/to/AI-BankApp-DevOps
+
+# Build for amd64 architecture (EKS nodes are amd64)
+# Use the SAME image name you specified in Step 6
+docker buildx build --platform linux/amd64 \
+  -t YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest \
+  --push .
+```
+
+**Example:**
+```bash
+docker buildx build --platform linux/amd64 \
+  -t ramiztakildar/ai-bankapp-eks:latest \
+  --push .
+```
+
+**Verify image was pushed:**
+```bash
+docker pull YOUR_DOCKERHUB_USERNAME/ai-bankapp-eks:latest
 ```
 
 ### 8️⃣ Deploy via ArgoCD
@@ -371,7 +383,31 @@ kubectl apply -f /tmp/gatewayclass.yaml
 kubectl get gatewayclass eg
 ```
 
-### Issue 5: Certificate Not Issuing
+### Issue 5: cert-manager Installation Stuck
+
+**Symptom:** Helm install hangs with `--wait` flag, or shows `STATUS: pending-install`
+
+**Cause:** Helm `--wait` flag can hang indefinitely, similar to Envoy Gateway issue
+
+**Solution:**
+```bash
+# 1. Clean up stuck installation
+helm uninstall cert-manager -n cert-manager
+kubectl delete namespace cert-manager
+
+# 2. Use kubectl apply instead of Helm
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+
+# 3. Wait for pods manually
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager \
+  -n cert-manager --timeout=60s
+
+# 4. Verify
+kubectl get pods -n cert-manager
+kubectl get crd | grep cert-manager
+```
+
+### Issue 6: Certificate Not Issuing
 
 **Symptom:** `kubectl get certificate -n bankapp` shows `Ready: False`
 
