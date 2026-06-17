@@ -155,12 +155,20 @@ else
 fi
 
 # Step 4: Apply PRODUCTION ClusterIssuer
-print_step "Step 4: Applying PRODUCTION ClusterIssuer"
-kubectl apply -f k8s/cert-manager.yml
-print_success "Production ClusterIssuer applied"
+if is_step_completed 4; then
+    print_info "Step 4 already completed, skipping..."
+else
+    print_step "Step 4: Applying PRODUCTION ClusterIssuer"
+    kubectl apply -f k8s/cert-manager.yml
+    print_success "Production ClusterIssuer applied"
+    save_checkpoint 4
+fi
 
 # Step 5: Update production configuration and push to git
-print_step "Step 5: Updating Configuration Files for Production Domain"
+if is_step_completed 5; then
+    print_info "Step 5 already completed, skipping..."
+else
+    print_step "Step 5: Updating Configuration Files for Production Domain"
 print_info "Production domain: $PROD_DOMAIN"
 
 # Backup current files
@@ -193,11 +201,35 @@ git push origin "$CURRENT_BRANCH" || {
     print_warning "Failed to push to git. Continuing with local changes..."
 }
 
-print_success "Configuration files updated and pushed to git"
+    print_success "Configuration files updated and pushed to git"
+    save_checkpoint 5
+fi
 
-# Step 6: Get ArgoCD Access Information
-print_step "Step 6: ArgoCD Access Information"
-if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
+# Step 6: Docker Image Confirmation
+if is_step_completed 6; then
+    print_info "Step 6 already completed, skipping..."
+else
+    print_step "Step 6: Docker Image Confirmation"
+    print_info "Before proceeding, ensure you have:"
+echo "  1. Updated k8s/bankapp-deployment.yml with your DockerHub username"
+echo "  2. Built Docker image: docker build -t <username>/bankapp:latest ."
+echo "  3. Pushed to DockerHub: docker push <username>/bankapp:latest"
+echo ""
+read -p "Have you built and pushed the Docker image? (yes/no): " docker_confirm
+if [ "$docker_confirm" != "yes" ]; then
+    print_error "Please build and push Docker image before continuing"
+    exit 1
+fi
+    print_success "Docker image confirmation received"
+    save_checkpoint 6
+fi
+
+# Step 7: Get ArgoCD Access Information
+if is_step_completed 7; then
+    print_info "Step 7 already completed, skipping..."
+else
+    print_step "Step 7: ArgoCD Access Information"
+    if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
     
@@ -208,12 +240,17 @@ if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     echo -e "  Password: ${GREEN}$ARGOCD_PASSWORD${NC}"
     echo ""
     print_success "ArgoCD credentials retrieved"
-else
-    print_warning "ArgoCD not found in cluster"
+    else
+        print_warning "ArgoCD not found in cluster"
+    fi
+    save_checkpoint 7
 fi
 
-# Step 7: Deploy via ArgoCD or kubectl
-print_step "Step 7: Deploying Application"
+# Step 8: Deploy via ArgoCD or kubectl
+if is_step_completed 8; then
+    print_info "Step 8 already completed, skipping..."
+else
+    print_step "Step 8: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
     print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
@@ -236,10 +273,18 @@ for i in {1..30}; do
     sleep 2
 done
 
-print_success "Application deployed with production configuration"
+    print_success "Application deployed with production configuration"
+    save_checkpoint 8
+fi
 
-# Step 8: Get LoadBalancer IP
-print_step "Step 8: Getting LoadBalancer IP"
+# Step 9: Get LoadBalancer IP
+if is_step_completed 9; then
+    print_info "Step 9 already completed, retrieving LoadBalancer IP..."
+    LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
+    LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
+    print_success "LoadBalancer IP: $LB_IP"
+else
+    print_step "Step 9: Getting LoadBalancer IP"
 print_info "Waiting for LoadBalancer (2-3 minutes)..."
 sleep 90
 
@@ -250,11 +295,16 @@ if [ -z "$LB_HOSTNAME" ]; then
     LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
 fi
 
-LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
-print_success "LoadBalancer IP: $LB_IP"
+    LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
+    print_success "LoadBalancer IP: $LB_IP"
+    save_checkpoint 9
+fi
 
-# Step 9: DNS Configuration
-print_step "Step 9: Configure DNS A Record in GoDaddy"
+# Step 10: DNS Configuration
+if is_step_completed 10; then
+    print_info "Step 10 already completed, skipping DNS configuration prompt..."
+else
+    print_step "Step 10: Configure DNS A Record in GoDaddy"
 echo ""
 echo -e "${YELLOW}=================================================${NC}"
 echo -e "${YELLOW}ACTION REQUIRED: Add DNS A Record in GoDaddy${NC}"
@@ -276,11 +326,16 @@ echo ""
 echo -e "${RED}IMPORTANT: Wait for the DNS record to be saved before continuing!${NC}"
 echo -e "${YELLOW}WARNING: This will use 1 of your 5 weekly production certificates!${NC}"
 echo ""
-read -p "Press Enter ONLY after you have added the DNS record in GoDaddy: " confirm
-print_success "DNS record configuration confirmed"
+    read -p "Press Enter ONLY after you have added the DNS record in GoDaddy: " confirm
+    print_success "DNS record configuration confirmed"
+    save_checkpoint 10
+fi
 
-# Step 10: Wait for DNS
-print_step "Step 10: Waiting for DNS Propagation"
+# Step 11: Wait for DNS
+if is_step_completed 11; then
+    print_info "Step 11 already completed, skipping..."
+else
+    print_step "Step 11: Waiting for DNS Propagation"
 print_info "Checking DNS (may take 5-15 minutes)..."
 DNS_PROPAGATED=false
 for i in {1..30}; do
@@ -294,12 +349,17 @@ for i in {1..30}; do
     sleep 30
 done
 
-if [ "$DNS_PROPAGATED" = false ]; then
-    print_warning "DNS not fully propagated. Certificate issuance may take longer."
+    if [ "$DNS_PROPAGATED" = false ]; then
+        print_warning "DNS not fully propagated. Certificate issuance may take longer."
+    fi
+    save_checkpoint 11
 fi
 
-# Step 11: Wait for Certificate
-print_step "Step 11: Waiting for PRODUCTION Certificate"
+# Step 12: Wait for Certificate with Rate Limit Detection
+if is_step_completed 12; then
+    print_info "Step 12 already completed, skipping..."
+else
+    print_step "Step 12: Waiting for PRODUCTION Certificate"
 print_warning "This uses your rate limit quota (5 per week)"
 print_info "Monitoring certificate (1-2 minutes)..."
 
@@ -345,12 +405,17 @@ fi
 if [ "$CERT_READY" = false ]; then
     print_error "Certificate not ready. Checking status..."
     kubectl describe certificate bankapp-tls -n bankapp
-    kubectl get certificaterequest,order,challenge -n bankapp
-    exit 1
+        kubectl get certificaterequest,order,challenge -n bankapp
+        exit 1
+    fi
+    save_checkpoint 12
 fi
 
-# Step 12: Verify Application
-print_step "Step 12: Verifying Application Access"
+# Step 13: Verify Application Access
+if is_step_completed 13; then
+    print_info "Step 13 already completed, skipping..."
+else
+    print_step "Step 13: Verifying Application Access"
 print_info "Testing HTTPS endpoint..."
 sleep 10
 HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$PROD_DOMAIN/" || echo "000")
@@ -358,12 +423,17 @@ echo "HTTPS Response: $HTTPS_CODE"
 
 if [ "$HTTPS_CODE" == "302" ] || [ "$HTTPS_CODE" == "200" ]; then
     print_success "Application is accessible!"
-else
-    print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
+    else
+        print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
+    fi
+    save_checkpoint 13
 fi
 
-# Step 13: Install Monitoring Stack (Optional)
-print_step "Step 13: Installing kube-prometheus-stack (Optional)"
+# Step 14: Install Monitoring Stack (Optional)
+if is_step_completed 14; then
+    print_info "Step 14 already completed, skipping..."
+else
+    print_step "Step 14: Installing kube-prometheus-stack (Optional)"
 read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
 
 if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
@@ -387,7 +457,9 @@ if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
     GRAFANA_URL=$(kubectl get svc kube-prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
 
-    print_success "Monitoring stack installed!"
+        print_success "Monitoring stack installed!"
+    fi
+    save_checkpoint 14
 fi
 
 # Final Summary
