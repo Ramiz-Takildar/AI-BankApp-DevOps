@@ -512,13 +512,18 @@ if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     echo ""
 fi
 
-# Monitoring Access
-if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
-    echo "Grafana Access:"
-    echo "  URL: http://$GRAFANA_URL"
-    echo "  Username: admin"
-    echo "  Password: $GRAFANA_PASSWORD"
-    echo ""
+# Monitoring Access (check if monitoring is installed)
+if kubectl get namespace monitoring >/dev/null 2>&1; then
+    GRAFANA_URL=$(kubectl get svc kube-prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+    GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
+    
+    if [ -n "$GRAFANA_URL" ] && [ "$GRAFANA_URL" != "pending" ]; then
+        echo "Grafana Access:"
+        echo "  URL: http://$GRAFANA_URL"
+        echo "  Username: admin"
+        echo "  Password: $GRAFANA_PASSWORD"
+        echo ""
+    fi
 fi
 
 # Check remaining quota
