@@ -1,0 +1,16 @@
+# TLS Certificate for bankapp domain - STAGING VERSION
+# Use this when you hit Let's Encrypt production rate limits
+# This will issue an UNTRUSTED certificate for testing
+# Once rate limit expires, switch back to certificate.yml (production)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bankapp-tls
+  namespace: bankapp
+spec:
+  secretName: bankapp-tls
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+    - bankapp2.aicloudops.in

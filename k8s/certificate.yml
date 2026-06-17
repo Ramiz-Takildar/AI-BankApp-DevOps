@@ -15,4 +15,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - bankapp.aicloudops.in
+    - bankapp2.aicloudops.in
