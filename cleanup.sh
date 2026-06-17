@@ -192,24 +192,44 @@ echo "=========================================="
 echo "Step 10: Delete Checkpoint Files"
 echo "=========================================="
 # Delete checkpoint files so deployment scripts start fresh
+CHECKPOINT_FILES_DELETED=0
+
 if [ -f "/tmp/bankapp-deploy-checkpoint.txt" ]; then
     rm -f /tmp/bankapp-deploy-checkpoint.txt
     print_status "Deleted deploy-bankapp.sh checkpoint"
+    CHECKPOINT_FILES_DELETED=$((CHECKPOINT_FILES_DELETED + 1))
+else
+    print_warning "deploy-bankapp.sh checkpoint not found (already clean)"
 fi
 
 if [ -f "/tmp/bankapp-test-deploy-checkpoint.txt" ]; then
     rm -f /tmp/bankapp-test-deploy-checkpoint.txt
     print_status "Deleted deploy-test.sh checkpoint"
+    CHECKPOINT_FILES_DELETED=$((CHECKPOINT_FILES_DELETED + 1))
+else
+    print_warning "deploy-test.sh checkpoint not found (already clean)"
 fi
 
 if [ -f "/tmp/bankapp-production-deploy-checkpoint.txt" ]; then
     rm -f /tmp/bankapp-production-deploy-checkpoint.txt
     print_status "Deleted deploy-production.sh checkpoint"
+    CHECKPOINT_FILES_DELETED=$((CHECKPOINT_FILES_DELETED + 1))
+else
+    print_warning "deploy-production.sh checkpoint not found (already clean)"
 fi
 
 if [ -f "/tmp/bankapp-domain.txt" ]; then
     rm -f /tmp/bankapp-domain.txt
     print_status "Deleted domain cache file"
+    CHECKPOINT_FILES_DELETED=$((CHECKPOINT_FILES_DELETED + 1))
+else
+    print_warning "Domain cache file not found (already clean)"
+fi
+
+if [ $CHECKPOINT_FILES_DELETED -eq 0 ]; then
+    print_status "No checkpoint files found - system already clean"
+else
+    print_status "Deleted $CHECKPOINT_FILES_DELETED checkpoint file(s)"
 fi
 
 echo ""
