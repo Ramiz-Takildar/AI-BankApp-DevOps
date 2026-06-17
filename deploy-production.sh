@@ -280,9 +280,17 @@ fi
 # Step 9: Get LoadBalancer IP
 if is_step_completed 9; then
     print_info "Step 9 already completed, retrieving LoadBalancer IP..."
-    LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
-    LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
-    print_success "LoadBalancer IP: $LB_IP"
+    if kubectl get namespace bankapp >/dev/null 2>&1 && kubectl get gateway bankapp-gateway -n bankapp >/dev/null 2>&1; then
+        LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "")
+        if [ -n "$LB_HOSTNAME" ]; then
+            LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
+            print_success "LoadBalancer IP: $LB_IP"
+        else
+            print_warning "Gateway not ready, will retrieve in next step"
+        fi
+    else
+        print_warning "Namespace or gateway not found (cleanup was run?), will retrieve in next step"
+    fi
 else
     print_step "Step 9: Getting LoadBalancer IP"
     print_info "Waiting for LoadBalancer (2-3 minutes)..."
