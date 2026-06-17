@@ -189,8 +189,22 @@ git push origin "$CURRENT_BRANCH" || {
 
 print_success "Configuration files updated and pushed to git"
 
-# Step 6: Get ArgoCD Access Information
-print_step "Step 6: ArgoCD Access Information"
+# Step 6: Docker Image Confirmation
+print_step "Step 6: Docker Image Confirmation"
+print_info "Before proceeding, ensure you have:"
+echo "  1. Updated k8s/bankapp-deployment.yml with your DockerHub username"
+echo "  2. Built Docker image: docker build -t <username>/bankapp:latest ."
+echo "  3. Pushed to DockerHub: docker push <username>/bankapp:latest"
+echo ""
+read -p "Have you built and pushed the Docker image? (yes/no): " docker_confirm
+if [ "$docker_confirm" != "yes" ]; then
+    print_error "Please build and push Docker image before continuing"
+    exit 1
+fi
+print_success "Docker image confirmation received"
+
+# Step 7: Get ArgoCD Access Information
+print_step "Step 7: ArgoCD Access Information"
 if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
@@ -206,8 +220,8 @@ else
     print_warning "ArgoCD not found in cluster"
 fi
 
-# Step 7: Deploy via ArgoCD or kubectl
-print_step "Step 7: Deploying Application"
+# Step 8: Deploy via ArgoCD or kubectl
+print_step "Step 8: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
     print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
@@ -232,8 +246,8 @@ done
 
 print_success "Application deployed with test configuration"
 
-# Step 8: Get LoadBalancer IP
-print_step "Step 8: Getting LoadBalancer IP"
+# Step 9: Get LoadBalancer IP
+print_step "Step 9: Getting LoadBalancer IP"
 print_info "Waiting for LoadBalancer (2-3 minutes)..."
 sleep 90
 
@@ -247,8 +261,8 @@ fi
 LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
 print_success "LoadBalancer IP: $LB_IP"
 
-# Step 9: DNS Configuration
-print_step "Step 9: Configure DNS A Record in GoDaddy"
+# Step 10: DNS Configuration
+print_step "Step 10: Configure DNS A Record in GoDaddy"
 echo ""
 echo -e "${YELLOW}=================================================${NC}"
 echo -e "${YELLOW}ACTION REQUIRED: Add DNS A Record in GoDaddy${NC}"
@@ -272,8 +286,8 @@ echo ""
 read -p "Press Enter ONLY after you have added the DNS record in GoDaddy: " confirm
 print_success "DNS record configuration confirmed"
 
-# Step 10: Wait for DNS
-print_step "Step 10: Waiting for DNS Propagation"
+# Step 11: Wait for DNS
+print_step "Step 11: Waiting for DNS Propagation"
 print_info "Checking DNS (may take 5-10 minutes)..."
 for i in {1..30}; do
     RESOLVED_IP=$(dig +short "$TEST_DOMAIN" @8.8.8.8 | head -n 1)
@@ -285,8 +299,8 @@ for i in {1..30}; do
     sleep 30
 done
 
-# Step 11: Wait for Certificate
-print_step "Step 11: Waiting for STAGING Certificate"
+# Step 12: Wait for Certificate
+print_step "Step 12: Waiting for STAGING Certificate"
 print_warning "This will issue an UNTRUSTED certificate"
 print_info "Monitoring certificate (1-2 minutes)..."
 
@@ -307,8 +321,8 @@ if [ "$CERT_STATUS" != "True" ]; then
     exit 1
 fi
 
-# Step 12: Verify Application Access
-print_step "Step 12: Verifying Application Access"
+# Step 13: Verify Application Access
+print_step "Step 13: Verifying Application Access"
 print_info "Testing HTTPS endpoint..."
 sleep 10
 HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$TEST_DOMAIN/" 2>/dev/null || echo "000")
@@ -320,8 +334,8 @@ else
     print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
 fi
 
-# Step 13: Install Monitoring Stack (Optional)
-print_step "Step 13: Installing kube-prometheus-stack (Optional)"
+# Step 14: Install Monitoring Stack (Optional)
+print_step "Step 14: Installing kube-prometheus-stack (Optional)"
 read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
 
 if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
