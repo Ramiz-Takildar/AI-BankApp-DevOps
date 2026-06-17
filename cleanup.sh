@@ -164,7 +164,7 @@ echo "Checking for Orphaned Resources"
 echo "=========================================="
 
 # Check for remaining namespaces
-NAMESPACES=$(kubectl get namespaces -o jsonpath='{.items[?(@.metadata.name!="default" && @.metadata.name!="kube-system" && @.metadata.name!="kube-public" && @.metadata.name!="kube-node-lease" && @.metadata.name!="argocd")].metadata.name}')
+NAMESPACES=$(kubectl get namespaces -o json | jq -r '.items[] | select(.metadata.name != "default" and .metadata.name != "kube-system" and .metadata.name != "kube-public" and .metadata.name != "kube-node-lease" and .metadata.name != "argocd") | .metadata.name' 2>/dev/null || echo "")
 if [ -n "$NAMESPACES" ]; then
     print_warning "Found additional namespaces: $NAMESPACES"
 else
