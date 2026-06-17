@@ -365,26 +365,53 @@ else
 
     CERT_READY=false
     RATE_LIMITED=false
-    for i in {1..60}; do
-        CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
-        if [ "$CERT_STATUS" == "True" ]; then
-            print_success "PRODUCTION certificate issued!"
-            CERT_READY=true
+    RETRY_COUNT=0
+    MAX_RETRIES=2
+    
+    while [ $RETRY_COUNT -le $MAX_RETRIES ]; do
+        for i in {1..60}; do
+            CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+            if [ "$CERT_STATUS" == "True" ]; then
+                print_success "PRODUCTION certificate issued!"
+                CERT_READY=true
+                break 2
+            fi
+            
+            # Check for rate limit
+            CERT_MESSAGE=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Issuing")].message}' 2>/dev/null || echo "")
+            if echo "$CERT_MESSAGE" | grep -qi "rateLimited\|429.*too many certificates"; then
+                RATE_LIMITED=true
+                RETRY_AFTER=$(echo "$CERT_MESSAGE" | grep -Eo 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | sed 's/retry after //')
+                break 2
+            fi
+            
+            # Check for failed order (but not rate limit)
+            ORDER_STATE=$(kubectl get order -n bankapp -o jsonpath='{.items[0].status.state}' 2>/dev/null || echo "")
+            if [ "$ORDER_STATE" == "errored" ] && [ "$RATE_LIMITED" = false ]; then
+                print_warning "Certificate order failed. Cleaning up and retrying..."
+                kubectl delete certificate bankapp-tls -n bankapp 2>/dev/null || true
+                kubectl delete certificaterequest,order,challenge -n bankapp --all 2>/dev/null || true
+                sleep 10
+                kubectl apply -f k8s/certificate.yml
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                print_info "Retry attempt $RETRY_COUNT of $MAX_RETRIES..."
+                sleep 20
+                break
+            fi
+            
+            echo -n "."
+            sleep 5
+        done
+        
+        if [ "$CERT_READY" = true ] || [ "$RATE_LIMITED" = true ]; then
             break
         fi
         
-        # Check for rate limit
-        CERT_MESSAGE=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Issuing")].message}' 2>/dev/null || echo "")
-        if echo "$CERT_MESSAGE" | grep -qi "rateLimited\|429.*too many certificates"; then
-            RATE_LIMITED=true
-            RETRY_AFTER=$(echo "$CERT_MESSAGE" | grep -Eo 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | sed 's/retry after //')
+        if [ $RETRY_COUNT -gt $MAX_RETRIES ]; then
             break
         fi
-        
-        echo -n "."
-        sleep 5
-done
-echo ""
+    done
+    echo ""
 
 if [ "$RATE_LIMITED" = true ]; then
     print_error "Let's Encrypt Rate Limit Hit!"

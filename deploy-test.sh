@@ -350,20 +350,51 @@ else
     print_warning "This will issue an UNTRUSTED certificate"
     print_info "Monitoring certificate (1-2 minutes)..."
 
-    for i in {1..60}; do
-        CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+    RETRY_COUNT=0
+    MAX_RETRIES=2
+    
+    while [ $RETRY_COUNT -le $MAX_RETRIES ]; do
+        for i in {1..60}; do
+            CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+            if [ "$CERT_STATUS" == "True" ]; then
+                print_success "STAGING certificate issued!"
+                break 2
+            fi
+            
+            # Check for failed order
+            ORDER_STATE=$(kubectl get order -n bankapp -o jsonpath='{.items[0].status.state}' 2>/dev/null || echo "")
+            if [ "$ORDER_STATE" == "errored" ]; then
+                print_warning "Certificate order failed. Cleaning up and retrying..."
+                kubectl delete certificate bankapp-tls -n bankapp 2>/dev/null || true
+                kubectl delete certificaterequest,order,challenge -n bankapp --all 2>/dev/null || true
+                sleep 10
+                kubectl apply -f k8s/certificate.yml
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                print_info "Retry attempt $RETRY_COUNT of $MAX_RETRIES..."
+                sleep 20
+                break
+            fi
+            
+            echo -n "."
+            sleep 5
+        done
+        
         if [ "$CERT_STATUS" == "True" ]; then
-            print_success "STAGING certificate issued!"
             break
         fi
-        echo -n "."
-        sleep 5
+        
+        if [ $RETRY_COUNT -gt $MAX_RETRIES ]; then
+            break
+        fi
     done
     echo ""
 
     if [ "$CERT_STATUS" != "True" ]; then
-        print_error "Certificate not ready. Checking status..."
+        print_error "Certificate not ready after $MAX_RETRIES retries. Checking status..."
         kubectl describe certificate bankapp-tls -n bankapp
+        kubectl get certificaterequest,order,challenge -n bankapp
+        print_info "This may be a temporary issue with Let's Encrypt staging servers."
+        print_info "You can retry by running: kubectl delete certificate bankapp-tls -n bankapp && ./deploy-test.sh"
         exit 1
     fi
     save_checkpoint 12
