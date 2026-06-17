@@ -423,9 +423,9 @@ if is_step_completed 14; then
     print_info "Step 14 already completed, skipping..."
 else
     print_step "Step 14: Installing kube-prometheus-stack (Optional)"
-read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
+    read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
 
-if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
+    if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
     print_info "Adding Prometheus Helm repository..."
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
     helm repo update prometheus-community
