@@ -149,12 +149,20 @@ else
 fi
 
 # Step 4: Apply STAGING ClusterIssuer
-print_step "Step 4: Applying STAGING ClusterIssuer"
-kubectl apply -f k8s/cert-manager-staging.yml
-print_success "Staging ClusterIssuer applied"
+if is_step_completed 4; then
+    print_info "Step 4 already completed, skipping..."
+else
+    print_step "Step 4: Applying STAGING ClusterIssuer"
+    kubectl apply -f k8s/cert-manager-staging.yml
+    print_success "Staging ClusterIssuer applied"
+    save_checkpoint 4
+fi
 
 # Step 5: Update test configuration and push to git
-print_step "Step 5: Updating Configuration Files for Test Domain"
+if is_step_completed 5; then
+    print_info "Step 5 already completed, skipping..."
+else
+    print_step "Step 5: Updating Configuration Files for Test Domain"
 print_info "Test domain: $TEST_DOMAIN"
 
 # Backup current files
@@ -188,9 +196,14 @@ git push origin "$CURRENT_BRANCH" || {
 }
 
 print_success "Configuration files updated and pushed to git"
+    save_checkpoint 5
+fi
 
 # Step 6: Docker Image Confirmation
-print_step "Step 6: Docker Image Confirmation"
+if is_step_completed 6; then
+    print_info "Step 6 already completed, skipping..."
+else
+    print_step "Step 6: Docker Image Confirmation"
 print_info "Before proceeding, ensure you have:"
 echo "  1. Updated k8s/bankapp-deployment.yml with your DockerHub username"
 echo "  2. Built Docker image: docker build -t <username>/bankapp:latest ."
@@ -202,9 +215,14 @@ if [ "$docker_confirm" != "yes" ]; then
     exit 1
 fi
 print_success "Docker image confirmation received"
+    save_checkpoint 6
+fi
 
 # Step 7: Get ArgoCD Access Information
-print_step "Step 7: ArgoCD Access Information"
+if is_step_completed 7; then
+    print_info "Step 7 already completed, skipping..."
+else
+    print_step "Step 7: ArgoCD Access Information"
 if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
@@ -219,9 +237,14 @@ if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
 else
     print_warning "ArgoCD not found in cluster"
 fi
+    save_checkpoint 7
+fi
 
 # Step 8: Deploy via ArgoCD or kubectl
-print_step "Step 8: Deploying Application"
+if is_step_completed 8; then
+    print_info "Step 8 already completed, skipping..."
+else
+    print_step "Step 8: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
     print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
@@ -245,9 +268,17 @@ for i in {1..30}; do
 done
 
 print_success "Application deployed with test configuration"
+    save_checkpoint 8
+fi
 
 # Step 9: Get LoadBalancer IP
-print_step "Step 9: Getting LoadBalancer IP"
+if is_step_completed 9; then
+    print_info "Step 9 already completed, retrieving LoadBalancer IP..."
+    LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
+    LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
+    print_success "LoadBalancer IP: $LB_IP"
+else
+    print_step "Step 9: Getting LoadBalancer IP"
 print_info "Waiting for LoadBalancer (2-3 minutes)..."
 sleep 90
 
@@ -259,10 +290,15 @@ if [ -z "$LB_HOSTNAME" ]; then
 fi
 
 LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
-print_success "LoadBalancer IP: $LB_IP"
+    print_success "LoadBalancer IP: $LB_IP"
+    save_checkpoint 9
+fi
 
 # Step 10: DNS Configuration
-print_step "Step 10: Configure DNS A Record in GoDaddy"
+if is_step_completed 10; then
+    print_info "Step 10 already completed, skipping DNS configuration prompt..."
+else
+    print_step "Step 10: Configure DNS A Record in GoDaddy"
 echo ""
 echo -e "${YELLOW}=================================================${NC}"
 echo -e "${YELLOW}ACTION REQUIRED: Add DNS A Record in GoDaddy${NC}"
@@ -284,10 +320,15 @@ echo ""
 echo -e "${RED}IMPORTANT: Wait for the DNS record to be saved before continuing!${NC}"
 echo ""
 read -p "Press Enter ONLY after you have added the DNS record in GoDaddy: " confirm
-print_success "DNS record configuration confirmed"
+    print_success "DNS record configuration confirmed"
+    save_checkpoint 10
+fi
 
 # Step 11: Wait for DNS
-print_step "Step 11: Waiting for DNS Propagation"
+if is_step_completed 11; then
+    print_info "Step 11 already completed, skipping..."
+else
+    print_step "Step 11: Waiting for DNS Propagation"
 print_info "Checking DNS (may take 5-10 minutes)..."
 for i in {1..30}; do
     RESOLVED_IP=$(dig +short "$TEST_DOMAIN" @8.8.8.8 | head -n 1)
@@ -298,9 +339,14 @@ for i in {1..30}; do
     echo "Attempt $i/30: Not yet (got: $RESOLVED_IP, expected: $LB_IP)"
     sleep 30
 done
+    save_checkpoint 11
+fi
 
 # Step 12: Wait for Certificate
-print_step "Step 12: Waiting for STAGING Certificate"
+if is_step_completed 12; then
+    print_info "Step 12 already completed, skipping..."
+else
+    print_step "Step 12: Waiting for STAGING Certificate"
 print_warning "This will issue an UNTRUSTED certificate"
 print_info "Monitoring certificate (1-2 minutes)..."
 
@@ -320,9 +366,14 @@ if [ "$CERT_STATUS" != "True" ]; then
     kubectl describe certificate bankapp-tls -n bankapp
     exit 1
 fi
+    save_checkpoint 12
+fi
 
 # Step 13: Verify Application Access
-print_step "Step 13: Verifying Application Access"
+if is_step_completed 13; then
+    print_info "Step 13 already completed, skipping..."
+else
+    print_step "Step 13: Verifying Application Access"
 print_info "Testing HTTPS endpoint..."
 sleep 10
 HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$TEST_DOMAIN/" 2>/dev/null || echo "000")
@@ -333,9 +384,14 @@ if [ "$HTTPS_CODE" == "302" ] || [ "$HTTPS_CODE" == "200" ]; then
 else
     print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
 fi
+    save_checkpoint 13
+fi
 
 # Step 14: Install Monitoring Stack (Optional)
-print_step "Step 14: Installing kube-prometheus-stack (Optional)"
+if is_step_completed 14; then
+    print_info "Step 14 already completed, skipping..."
+else
+    print_step "Step 14: Installing kube-prometheus-stack (Optional)"
 read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
 
 if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
@@ -360,6 +416,8 @@ if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
     GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
 
     print_success "Monitoring stack installed!"
+fi
+    save_checkpoint 14
 fi
 
 # Final Summary
