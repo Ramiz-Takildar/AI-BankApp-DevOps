@@ -285,15 +285,15 @@ if is_step_completed 9; then
     print_success "LoadBalancer IP: $LB_IP"
 else
     print_step "Step 9: Getting LoadBalancer IP"
-print_info "Waiting for LoadBalancer (2-3 minutes)..."
-sleep 90
+    print_info "Waiting for LoadBalancer (2-3 minutes)..."
+    sleep 90
 
-LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "")
-if [ -z "$LB_HOSTNAME" ]; then
-    print_error "LoadBalancer not ready yet. Waiting 30 more seconds..."
-    sleep 30
-    LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
-fi
+    LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "")
+    if [ -z "$LB_HOSTNAME" ]; then
+        print_error "LoadBalancer not ready yet. Waiting 30 more seconds..."
+        sleep 30
+        LB_HOSTNAME=$(kubectl get gateway bankapp-gateway -n bankapp -o jsonpath='{.status.addresses[0].value}')
+    fi
 
     LB_IP=$(dig +short "$LB_HOSTNAME" | head -n 1)
     print_success "LoadBalancer IP: $LB_IP"
@@ -305,27 +305,27 @@ if is_step_completed 10; then
     print_info "Step 10 already completed, skipping DNS configuration prompt..."
 else
     print_step "Step 10: Configure DNS A Record in GoDaddy"
-echo ""
-echo -e "${YELLOW}=================================================${NC}"
-echo -e "${YELLOW}ACTION REQUIRED: Add DNS A Record in GoDaddy${NC}"
-echo -e "${YELLOW}=================================================${NC}"
-echo ""
-echo -e "${GREEN}Domain:${NC} $PROD_DOMAIN"
-echo -e "${GREEN}LoadBalancer IP:${NC} ${BLUE}$LB_IP${NC}"
-echo ""
-echo -e "${YELLOW}Steps to add DNS record in GoDaddy:${NC}"
-echo ""
-echo "1. Go to https://dcc.godaddy.com/manage/aicloudops.in/dns"
-echo "2. Click 'Add New Record'"
-echo "3. Select Type: ${GREEN}A${NC}"
-echo "4. Enter Name: ${GREEN}aibankapp${NC}"
-echo "5. Enter Value: ${BLUE}$LB_IP${NC}"
-echo "6. Set TTL: ${GREEN}600 seconds (10 minutes)${NC}"
-echo "7. Click 'Save'"
-echo ""
-echo -e "${RED}IMPORTANT: Wait for the DNS record to be saved before continuing!${NC}"
-echo -e "${YELLOW}WARNING: This will use 1 of your 5 weekly production certificates!${NC}"
-echo ""
+    echo ""
+    echo -e "${YELLOW}=================================================${NC}"
+    echo -e "${YELLOW}ACTION REQUIRED: Add DNS A Record in GoDaddy${NC}"
+    echo -e "${YELLOW}=================================================${NC}"
+    echo ""
+    echo -e "${GREEN}Domain:${NC} $PROD_DOMAIN"
+    echo -e "${GREEN}LoadBalancer IP:${NC} ${BLUE}$LB_IP${NC}"
+    echo ""
+    echo -e "${YELLOW}Steps to add DNS record in GoDaddy:${NC}"
+    echo ""
+    echo "1. Go to https://dcc.godaddy.com/manage/aicloudops.in/dns"
+    echo "2. Click 'Add New Record'"
+    echo "3. Select Type: ${GREEN}A${NC}"
+    echo "4. Enter Name: ${GREEN}aibankapp${NC}"
+    echo "5. Enter Value: ${BLUE}$LB_IP${NC}"
+    echo "6. Set TTL: ${GREEN}600 seconds (10 minutes)${NC}"
+    echo "7. Click 'Save'"
+    echo ""
+    echo -e "${RED}IMPORTANT: Wait for the DNS record to be saved before continuing!${NC}"
+    echo -e "${YELLOW}WARNING: This will use 1 of your 5 weekly production certificates!${NC}"
+    echo ""
     read -p "Press Enter ONLY after you have added the DNS record in GoDaddy: " confirm
     print_success "DNS record configuration confirmed"
     save_checkpoint 10
@@ -336,18 +336,18 @@ if is_step_completed 11; then
     print_info "Step 11 already completed, skipping..."
 else
     print_step "Step 11: Waiting for DNS Propagation"
-print_info "Checking DNS (may take 5-15 minutes)..."
-DNS_PROPAGATED=false
-for i in {1..30}; do
-    RESOLVED_IP=$(dig +short "$PROD_DOMAIN" @8.8.8.8 | head -n 1)
-    if [ "$RESOLVED_IP" == "$LB_IP" ]; then
-        print_success "DNS propagated!"
-        DNS_PROPAGATED=true
-        break
-    fi
-    echo "Attempt $i/30: Not yet (got: $RESOLVED_IP, expected: $LB_IP)"
-    sleep 30
-done
+    print_info "Checking DNS (may take 5-15 minutes)..."
+    DNS_PROPAGATED=false
+    for i in {1..30}; do
+        RESOLVED_IP=$(dig +short "$PROD_DOMAIN" @8.8.8.8 | head -n 1)
+        if [ "$RESOLVED_IP" == "$LB_IP" ]; then
+            print_success "DNS propagated!"
+            DNS_PROPAGATED=true
+            break
+        fi
+        echo "Attempt $i/30: Not yet (got: $RESOLVED_IP, expected: $LB_IP)"
+        sleep 30
+    done
 
     if [ "$DNS_PROPAGATED" = false ]; then
         print_warning "DNS not fully propagated. Certificate issuance may take longer."
@@ -360,29 +360,29 @@ if is_step_completed 12; then
     print_info "Step 12 already completed, skipping..."
 else
     print_step "Step 12: Waiting for PRODUCTION Certificate"
-print_warning "This uses your rate limit quota (5 per week)"
-print_info "Monitoring certificate (1-2 minutes)..."
+    print_warning "This uses your rate limit quota (5 per week)"
+    print_info "Monitoring certificate (1-2 minutes)..."
 
-CERT_READY=false
-RATE_LIMITED=false
-for i in {1..60}; do
-    CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
-    if [ "$CERT_STATUS" == "True" ]; then
-        print_success "PRODUCTION certificate issued!"
-        CERT_READY=true
-        break
-    fi
-    
-    # Check for rate limit
-    CERT_MESSAGE=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Issuing")].message}' 2>/dev/null || echo "")
-    if echo "$CERT_MESSAGE" | grep -qi "rateLimited\|429.*too many certificates"; then
-        RATE_LIMITED=true
-        RETRY_AFTER=$(echo "$CERT_MESSAGE" | grep -Eo 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | sed 's/retry after //')
-        break
-    fi
-    
-    echo -n "."
-    sleep 5
+    CERT_READY=false
+    RATE_LIMITED=false
+    for i in {1..60}; do
+        CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+        if [ "$CERT_STATUS" == "True" ]; then
+            print_success "PRODUCTION certificate issued!"
+            CERT_READY=true
+            break
+        fi
+        
+        # Check for rate limit
+        CERT_MESSAGE=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Issuing")].message}' 2>/dev/null || echo "")
+        if echo "$CERT_MESSAGE" | grep -qi "rateLimited\|429.*too many certificates"; then
+            RATE_LIMITED=true
+            RETRY_AFTER=$(echo "$CERT_MESSAGE" | grep -Eo 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | sed 's/retry after //')
+            break
+        fi
+        
+        echo -n "."
+        sleep 5
 done
 echo ""
 
@@ -402,9 +402,9 @@ if [ "$RATE_LIMITED" = true ]; then
     exit 1
 fi
 
-if [ "$CERT_READY" = false ]; then
-    print_error "Certificate not ready. Checking status..."
-    kubectl describe certificate bankapp-tls -n bankapp
+    if [ "$CERT_READY" = false ]; then
+        print_error "Certificate not ready. Checking status..."
+        kubectl describe certificate bankapp-tls -n bankapp
         kubectl get certificaterequest,order,challenge -n bankapp
         exit 1
     fi
@@ -416,13 +416,13 @@ if is_step_completed 13; then
     print_info "Step 13 already completed, skipping..."
 else
     print_step "Step 13: Verifying Application Access"
-print_info "Testing HTTPS endpoint..."
-sleep 10
-HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$PROD_DOMAIN/" || echo "000")
-echo "HTTPS Response: $HTTPS_CODE"
+    print_info "Testing HTTPS endpoint..."
+    sleep 10
+    HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$PROD_DOMAIN/" || echo "000")
+    echo "HTTPS Response: $HTTPS_CODE"
 
-if [ "$HTTPS_CODE" == "302" ] || [ "$HTTPS_CODE" == "200" ]; then
-    print_success "Application is accessible!"
+    if [ "$HTTPS_CODE" == "302" ] || [ "$HTTPS_CODE" == "200" ]; then
+        print_success "Application is accessible!"
     else
         print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
     fi
