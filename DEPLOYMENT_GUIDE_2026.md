@@ -73,10 +73,19 @@ chmod +x deploy-bankapp.sh
 
 **Script Features:**
 - **Idempotent:** Safe to re-run without errors
-- **Auto-recovery:** Automatically retries stuck certificate challenges
-- **Color-coded output:** Easy to follow progress
+- **Auto-recovery:** Automatically retries failed certificate orders (max 2 attempts)
+- **Checkpoint system:** Resume from last successful step if interrupted
+- **Color-coded output:** Easy to follow progress with icons (📱 🔧 📊)
 - **Interactive pauses:** Waits for DNS configuration
 - **Comprehensive checks:** Validates each step before proceeding
+- **Enhanced formatting:** Professional summary output with clear sections
+- **Post-cleanup safe:** Works correctly after running cleanup.sh
+
+**Alternative Deployment Scripts:**
+- **`deploy-test.sh`** - For testing with Let's Encrypt STAGING (unlimited, untrusted certificates)
+- **`deploy-production.sh`** - For production with Let's Encrypt PRODUCTION (5/week limit, trusted certificates)
+
+See [DEPLOYMENT_SCRIPTS_README.md](DEPLOYMENT_SCRIPTS_README.md) for detailed comparison and usage.
 
 **Time:** ~15-20 minutes (including DNS propagation wait)
 
