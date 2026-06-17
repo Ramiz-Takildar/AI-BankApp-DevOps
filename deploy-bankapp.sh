@@ -378,13 +378,9 @@ else
     print_step "Step 12: Waiting for TLS Certificate Issuance"
     print_info "Monitoring certificate creation (this may take 1-2 minutes)..."
 
-    # Restart cert-manager to clear any stale connections
-    print_info "Restarting cert-manager for fresh connection..."
-    kubectl delete pod -n cert-manager -l app.kubernetes.io/name=cert-manager
-    wait_for_pods "cert-manager" "app.kubernetes.io/name=cert-manager" 60
-
     print_info "Waiting for certificate to be issued..."
     CERT_READY=false
+    RATE_LIMITED=false
     for i in {1..60}; do
         CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
         if [ "$CERT_STATUS" == "True" ]; then
@@ -392,44 +388,59 @@ else
             CERT_READY=true
             break
         fi
+        
+        # Check for rate limit error
+        CERT_MESSAGE=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Issuing")].message}' 2>/dev/null || echo "")
+        if echo "$CERT_MESSAGE" | grep -qi "rateLimited\|429.*too many certificates"; then
+            RATE_LIMITED=true
+            RETRY_AFTER=$(echo "$CERT_MESSAGE" | grep -Eo 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | sed 's/retry after //')
+            break
+        fi
+        
         echo -n "."
         sleep 5
     done
     echo ""
 
-    if [ "$CERT_READY" = false ]; then
-        print_error "Certificate not ready after 5 minutes. Attempting recovery..."
-        
-        # Check if challenge is stuck
-        CHALLENGE_STATE=$(kubectl get challenge -n bankapp -o jsonpath='{.items[0].status.state}' 2>/dev/null || echo "")
-        if [ "$CHALLENGE_STATE" == "pending" ]; then
-            print_info "Challenge stuck in pending state. Recreating certificate..."
-            kubectl delete certificate bankapp-tls -n bankapp
-            sleep 5
-            kubectl apply -f k8s/certificate.yml
-            
-            print_info "Waiting for new certificate issuance (30 seconds)..."
-            sleep 30
-            
-            CERT_STATUS=$(kubectl get certificate bankapp-tls -n bankapp -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
-            if [ "$CERT_STATUS" == "True" ]; then
-                print_success "Certificate issued successfully after retry!"
-                CERT_READY=true
-            else
-                print_error "Certificate still not ready. Manual intervention may be required."
-                kubectl describe certificate bankapp-tls -n bankapp
-                kubectl get challenge -n bankapp
-                print_info "You can re-run this script to retry from this step"
-                exit 1
-            fi
-        else
-            print_error "Certificate not ready. Checking status..."
-            kubectl describe certificate bankapp-tls -n bankapp
-            kubectl get challenge -n bankapp
-            print_info "Certificate issuance may take longer. Check ArgoCD and cert-manager logs."
-            print_info "You can re-run this script to retry from this step"
-            exit 1
+    if [ "$RATE_LIMITED" = true ]; then
+        print_error "Let's Encrypt Rate Limit Hit!"
+        echo ""
+        echo -e "${RED}========================================${NC}"
+        echo -e "${RED}   RATE LIMIT DETECTED${NC}"
+        echo -e "${RED}========================================${NC}"
+        echo ""
+        if [ -n "$RETRY_AFTER" ]; then
+            print_info "Rate limit expires: $RETRY_AFTER UTC"
         fi
+        echo ""
+        print_info "Let's Encrypt limits 5 certificates per exact domain set in 168 hours."
+        echo ""
+        echo -e "${YELLOW}Solution Options:${NC}"
+        echo ""
+        echo "1. Wait until rate limit expires and re-run this script"
+        echo ""
+        echo "2. Use a different subdomain (RECOMMENDED for immediate deployment):"
+        echo "   - Update k8s/gateway.yml hostname (e.g., bankapp2.yourdomain.com)"
+        echo "   - Update k8s/certificate.yml dnsNames"
+        echo "   - Create DNS A record for new subdomain"
+        echo "   - Commit and push changes"
+        echo "   - Re-run this script"
+        echo ""
+        echo "3. Use staging environment for testing (issues untrusted certificates):"
+        echo "   - kubectl apply -f k8s/cert-manager-staging.yml"
+        echo "   - kubectl apply -f k8s/certificate-staging.yml"
+        echo ""
+        kubectl describe certificate bankapp-tls -n bankapp
+        exit 1
+    fi
+
+    if [ "$CERT_READY" = false ]; then
+        print_error "Certificate not ready after 5 minutes. Checking status..."
+        kubectl describe certificate bankapp-tls -n bankapp
+        kubectl get certificaterequest,order,challenge -n bankapp
+        print_info "Certificate issuance may take longer. Check ArgoCD and cert-manager logs."
+        print_info "You can re-run this script to retry from this step"
+        exit 1
     fi
 
     # Trigger ArgoCD sync
