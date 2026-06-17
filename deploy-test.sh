@@ -290,6 +290,47 @@ if [ "$CERT_STATUS" != "True" ]; then
     exit 1
 fi
 
+# Step 12: Verify Application Access
+print_step "Step 12: Verifying Application Access"
+print_info "Testing HTTPS endpoint..."
+sleep 10
+HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$TEST_DOMAIN/" 2>/dev/null || echo "000")
+echo "HTTPS Response: $HTTPS_CODE"
+
+if [ "$HTTPS_CODE" == "302" ] || [ "$HTTPS_CODE" == "200" ]; then
+    print_success "Application is accessible!"
+else
+    print_warning "Application may not be fully ready yet (got $HTTPS_CODE)"
+fi
+
+# Step 13: Install Monitoring Stack (Optional)
+print_step "Step 13: Installing kube-prometheus-stack (Optional)"
+read -p "Do you want to install monitoring stack (Grafana/Prometheus)? (y/n): " INSTALL_MONITORING
+
+if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
+    print_info "Adding Prometheus Helm repository..."
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+    helm repo update prometheus-community
+
+    if helm list -n monitoring 2>/dev/null | grep -q "^kube-prometheus"; then
+        print_info "Monitoring stack already installed"
+    else
+        print_info "Installing kube-prometheus-stack (2-3 minutes)..."
+        helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+          -n monitoring \
+          --create-namespace \
+          --set grafana.service.type=LoadBalancer \
+          --timeout=10m
+    fi
+
+    wait_for_pods "monitoring" "release=kube-prometheus" 300
+
+    GRAFANA_URL=$(kubectl get svc kube-prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+    GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
+
+    print_success "Monitoring stack installed!"
+fi
+
 # Final Summary
 print_step "TEST Deployment Complete!"
 echo ""
@@ -301,6 +342,27 @@ echo -e "✅ Test URL: https://$TEST_DOMAIN"
 echo -e "✅ LoadBalancer IP: $LB_IP"
 echo -e "⚠️  Certificate: STAGING (untrusted)"
 echo ""
+
+# ArgoCD Access
+if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
+    echo "ArgoCD Access:"
+    ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+    ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
+    echo "  URL: http://$ARGOCD_URL"
+    echo "  Username: admin"
+    echo "  Password: $ARGOCD_PASSWORD"
+    echo ""
+fi
+
+# Monitoring Access
+if [ "$INSTALL_MONITORING" == "y" ] || [ "$INSTALL_MONITORING" == "Y" ]; then
+    echo "Grafana Access:"
+    echo "  URL: http://$GRAFANA_URL"
+    echo "  Username: admin"
+    echo "  Password: $GRAFANA_PASSWORD"
+    echo ""
+fi
+
 print_warning "Browser will show security warning - this is expected!"
 print_warning "Click 'Advanced' and 'Proceed' to access the application"
 echo ""
