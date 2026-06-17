@@ -210,8 +210,8 @@ else
     print_warning "deploy-test.sh checkpoint not found (already clean)"
 fi
 
-if [ -f "/tmp/bankapp-production-deploy-checkpoint.txt" ]; then
-    rm -f /tmp/bankapp-production-deploy-checkpoint.txt
+if [ -f "/tmp/bankapp-prod-deploy-checkpoint.txt" ]; then
+    rm -f /tmp/bankapp-prod-deploy-checkpoint.txt
     print_status "Deleted deploy-production.sh checkpoint"
     CHECKPOINT_FILES_DELETED=$((CHECKPOINT_FILES_DELETED + 1))
 else
