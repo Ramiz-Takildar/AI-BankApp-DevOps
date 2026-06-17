@@ -32,6 +32,9 @@ Two separate deployment scripts are provided to handle different deployment scen
 - Issues **UNTRUSTED** certificates (browser warnings expected)
 - **NO rate limits** - deploy as many times as needed
 - Domain: `test.aicloudops.in`
+- **Auto-retry logic** - Automatically retries failed certificate orders (max 2 attempts)
+- **Checkpoint system** - Resume from last successful step if interrupted
+- **Enhanced formatting** - Professional output with icons and color coding
 
 ### Usage:
 ```bash
@@ -45,11 +48,21 @@ Two separate deployment scripts are provided to handle different deployment scen
 4. ✅ No impact on production quota
 
 ### DNS Configuration:
+The script will display clear DNS configuration instructions:
 ```
-Type: A
-Name: test
-Value: [LoadBalancer IP from script output]
-TTL: 300
+Create A Record:
+
+  Type:  A
+  Name:  test
+  Value: [LoadBalancer IP] (your LoadBalancer IP)
+  TTL:   300 (5 minutes)
+
+Example Configuration:
+
+  Type:  A
+  Name:  test.aicloudops.in
+  Value: [LoadBalancer IP]
+  TTL:   300
 ```
 
 ## 🚀 Production Deployment (deploy-production.sh)
@@ -66,6 +79,10 @@ TTL: 300
 - **Rate Limited:** 5 certificates per week per domain
 - Domain: `aibankapp.aicloudops.in`
 - Requires confirmation before proceeding
+- **Auto-retry logic** - Automatically retries failed certificate orders (max 2 attempts)
+- **Rate limit detection** - Warns if rate limit is hit with retry time
+- **Checkpoint system** - Resume from last successful step if interrupted
+- **Enhanced formatting** - Professional output with icons and color coding
 
 ### Usage:
 ```bash
@@ -79,11 +96,21 @@ TTL: 300
 4. ✅ Production-ready deployment
 
 ### DNS Configuration:
+The script will display clear DNS configuration instructions:
 ```
-Type: A
-Name: aibankapp
-Value: [LoadBalancer IP from script output]
-TTL: 300
+Create A Record:
+
+  Type:  A
+  Name:  aibankapp
+  Value: [LoadBalancer IP] (your LoadBalancer IP)
+  TTL:   300 (5 minutes)
+
+Example Configuration:
+
+  Type:  A
+  Name:  aibankapp.aicloudops.in
+  Value: [LoadBalancer IP]
+  TTL:   300
 ```
 
 ## 🔄 Recommended Workflow
@@ -160,16 +187,34 @@ dig +short test.aicloudops.in @1.1.1.1
 
 ## 🔧 Advanced Usage
 
-### Clean Up Test Deployment
+### Complete Cleanup (Recommended)
+Use the automated cleanup script that removes all resources AND checkpoint files:
 ```bash
-kubectl delete certificate,gateway,httproute -n bankapp --all
-rm /tmp/bankapp-test-deploy-checkpoint.txt
+./cleanup.sh
 ```
 
-### Clean Up Production Deployment
+**What cleanup.sh does:**
+- Deletes ArgoCD application
+- Removes monitoring stack
+- Deletes BankApp namespace
+- Removes cert-manager
+- Uninstalls Envoy Gateway
+- Deletes Gateway API CRDs
+- **Deletes all checkpoint files** (ensures fresh deployment)
+- Waits for LoadBalancers to terminate
+- Verifies cleanup completion
+
+After running cleanup.sh, deployment scripts will start fresh from Step 1.
+
+### Manual Cleanup (Alternative)
 ```bash
+# Clean up test deployment
 kubectl delete certificate,gateway,httproute -n bankapp --all
-rm /tmp/bankapp-prod-deploy-checkpoint.txt
+rm /tmp/bankapp-test-deploy-checkpoint.txt
+
+# Clean up production deployment
+kubectl delete certificate,gateway,httproute -n bankapp --all
+rm /tmp/bankapp-production-deploy-checkpoint.txt
 ```
 
 ### Resume from Checkpoint
