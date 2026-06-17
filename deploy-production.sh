@@ -492,23 +492,25 @@ fi
 # Final Summary
 print_step "PRODUCTION Deployment Complete!"
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   Production Deployment Summary${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║              Production Deployment Summary                     ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "✅ Production URL: https://$PROD_DOMAIN"
-echo -e "✅ LoadBalancer IP: $LB_IP"
-echo -e "✅ Certificate: PRODUCTION (trusted)"
+echo -e "${BLUE}🚀 Application Access:${NC}"
+echo -e "   ${GREEN}URL:${NC}              https://$PROD_DOMAIN"
+echo -e "   ${GREEN}LoadBalancer IP:${NC}  $LB_IP"
+echo -e "   ${GREEN}Certificate:${NC}      PRODUCTION (trusted by browsers)"
 echo ""
 
 # ArgoCD Access
 if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
-    echo "ArgoCD Access:"
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
-    echo "  URL: http://$ARGOCD_URL"
-    echo "  Username: admin"
-    echo "  Password: $ARGOCD_PASSWORD"
+    
+    echo -e "${BLUE}🔧 ArgoCD Dashboard:${NC}"
+    echo -e "   ${GREEN}URL:${NC}      http://$ARGOCD_URL"
+    echo -e "   ${GREEN}Username:${NC} admin"
+    echo -e "   ${GREEN}Password:${NC} $ARGOCD_PASSWORD"
     echo ""
 fi
 
@@ -518,10 +520,10 @@ if kubectl get namespace monitoring >/dev/null 2>&1; then
     GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
     
     if [ -n "$GRAFANA_URL" ] && [ "$GRAFANA_URL" != "pending" ]; then
-        echo "Grafana Access:"
-        echo "  URL: http://$GRAFANA_URL"
-        echo "  Username: admin"
-        echo "  Password: $GRAFANA_PASSWORD"
+        echo -e "${BLUE}📊 Grafana Monitoring:${NC}"
+        echo -e "   ${GREEN}URL:${NC}      http://$GRAFANA_URL"
+        echo -e "   ${GREEN}Username:${NC} admin"
+        echo -e "   ${GREEN}Password:${NC} $GRAFANA_PASSWORD"
         echo ""
     fi
 fi
@@ -529,9 +531,9 @@ fi
 # Check remaining quota
 CERT_EVENTS=$(kubectl describe certificate bankapp-tls -n bankapp 2>/dev/null | grep -c "Successfully issued" || echo "1")
 REMAINING=$((5 - CERT_EVENTS))
-echo -e "${YELLOW}Rate Limit Status:${NC}"
-echo -e "  Used: $CERT_EVENTS/5 certificates"
-echo -e "  Remaining: $REMAINING certificates"
+echo -e "${BLUE}📋 Let's Encrypt Rate Limit Status:${NC}"
+echo -e "   ${GREEN}Used:${NC}      $CERT_EVENTS/5 certificates this week"
+echo -e "   ${GREEN}Remaining:${NC} $REMAINING certificates available"
 echo ""
 
 print_success "Production deployment successful! 🎉"

@@ -454,23 +454,25 @@ fi
 # Final Summary
 print_step "TEST Deployment Complete!"
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   Test Deployment Summary${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║                  Test Deployment Summary                       ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "✅ Test URL: https://$TEST_DOMAIN"
-echo -e "✅ LoadBalancer IP: $LB_IP"
-echo -e "⚠️  Certificate: STAGING (untrusted)"
+echo -e "${BLUE}📱 Application Access:${NC}"
+echo -e "   ${GREEN}URL:${NC}              https://$TEST_DOMAIN"
+echo -e "   ${GREEN}LoadBalancer IP:${NC}  $LB_IP"
+echo -e "   ${YELLOW}Certificate:${NC}      STAGING (untrusted - browser warning expected)"
 echo ""
 
 # ArgoCD Access
 if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
-    echo "ArgoCD Access:"
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
-    echo "  URL: http://$ARGOCD_URL"
-    echo "  Username: admin"
-    echo "  Password: $ARGOCD_PASSWORD"
+    
+    echo -e "${BLUE}🔧 ArgoCD Dashboard:${NC}"
+    echo -e "   ${GREEN}URL:${NC}      http://$ARGOCD_URL"
+    echo -e "   ${GREEN}Username:${NC} admin"
+    echo -e "   ${GREEN}Password:${NC} $ARGOCD_PASSWORD"
     echo ""
 fi
 
@@ -480,16 +482,18 @@ if kubectl get namespace monitoring >/dev/null 2>&1; then
     GRAFANA_PASSWORD=$(kubectl get secret kube-prometheus-grafana -n monitoring -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "pending")
     
     if [ -n "$GRAFANA_URL" ] && [ "$GRAFANA_URL" != "pending" ]; then
-        echo "Grafana Access:"
-        echo "  URL: http://$GRAFANA_URL"
-        echo "  Username: admin"
-        echo "  Password: $GRAFANA_PASSWORD"
+        echo -e "${BLUE}📊 Grafana Monitoring:${NC}"
+        echo -e "   ${GREEN}URL:${NC}      http://$GRAFANA_URL"
+        echo -e "   ${GREEN}Username:${NC} admin"
+        echo -e "   ${GREEN}Password:${NC} $GRAFANA_PASSWORD"
         echo ""
     fi
 fi
 
-print_warning "Browser will show security warning - this is expected!"
-print_warning "Click 'Advanced' and 'Proceed' to access the application"
+echo -e "${YELLOW}⚠️  Important Notes:${NC}"
+echo -e "   • Browser will show security warning (STAGING certificate)"
+echo -e "   • Click 'Advanced' → 'Proceed' to access the application"
+echo -e "   • This is expected behavior for test environment"
 echo ""
 print_success "Test deployment successful! 🎉"
 echo ""
