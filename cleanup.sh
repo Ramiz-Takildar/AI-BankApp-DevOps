@@ -189,5 +189,32 @@ fi
 
 echo ""
 echo "=========================================="
+echo "Step 10: Delete Checkpoint Files"
+echo "=========================================="
+# Delete checkpoint files so deployment scripts start fresh
+if [ -f "/tmp/bankapp-deploy-checkpoint.txt" ]; then
+    rm -f /tmp/bankapp-deploy-checkpoint.txt
+    print_status "Deleted deploy-bankapp.sh checkpoint"
+fi
+
+if [ -f "/tmp/bankapp-test-deploy-checkpoint.txt" ]; then
+    rm -f /tmp/bankapp-test-deploy-checkpoint.txt
+    print_status "Deleted deploy-test.sh checkpoint"
+fi
+
+if [ -f "/tmp/bankapp-production-deploy-checkpoint.txt" ]; then
+    rm -f /tmp/bankapp-production-deploy-checkpoint.txt
+    print_status "Deleted deploy-production.sh checkpoint"
+fi
+
+if [ -f "/tmp/bankapp-domain.txt" ]; then
+    rm -f /tmp/bankapp-domain.txt
+    print_status "Deleted domain cache file"
+fi
+
+echo ""
+echo "=========================================="
 echo "✅ Cleanup Script Complete!"
 echo "=========================================="
+echo ""
+print_status "All checkpoint files deleted - deployment scripts will start fresh"
