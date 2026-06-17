@@ -12,7 +12,7 @@ metadata:
 spec:
   secretName: bankapp-tls
   issuerRef:
-    name: letsencrypt-prod
+    name: letsencrypt-staging
     kind: ClusterIssuer
   dnsNames:
-    - bankapp2.aicloudops.in
+    - test.aicloudops.in

@@ -31,7 +31,7 @@ spec:
     - name: https
       protocol: HTTPS
       port: 443
-      hostname: bankapp2.aicloudops.in
+      hostname: test.aicloudops.in
       tls:
         mode: Terminate
         certificateRefs:
@@ -49,7 +49,7 @@ metadata:
   namespace: bankapp
 spec:
   hostnames:
-    - bankapp2.aicloudops.in
+    - test.aicloudops.in
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
