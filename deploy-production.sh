@@ -159,113 +159,52 @@ print_step "Step 4: Applying PRODUCTION ClusterIssuer"
 kubectl apply -f k8s/cert-manager.yml
 print_success "Production ClusterIssuer applied"
 
-# Step 5: Update production configuration
-print_step "Step 5: Configuring Production Domain"
+# Step 5: Update production configuration and push to git
+print_step "Step 5: Updating Configuration Files for Production Domain"
 print_info "Production domain: $PROD_DOMAIN"
 
-# Create temporary production certificate
-cat > /tmp/prod-certificate.yml << EOF
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: bankapp-tls
-  namespace: bankapp
-spec:
-  secretName: bankapp-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - $PROD_DOMAIN
-EOF
+# Backup current files
+print_info "Creating backup of current configuration..."
+cp k8s/gateway.yml k8s/gateway.yml.backup
+cp k8s/certificate.yml k8s/certificate.yml.backup
 
-# Create temporary production gateway
-cat > /tmp/prod-gateway.yml << EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: bankapp-gateway
-  namespace: bankapp
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
-        namespaces:
-          from: All
-    - name: https
-      protocol: HTTPS
-      port: 443
-      hostname: $PROD_DOMAIN
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - group: ""
-            kind: Secret
-            name: bankapp-tls
-      allowedRoutes:
-        namespaces:
-          from: Same
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: bankapp-route
-  namespace: bankapp
-spec:
-  hostnames:
-    - $PROD_DOMAIN
-  parentRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: bankapp-gateway
-      sectionName: https
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: bankapp-gateway
-      sectionName: http
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - group: ""
-          kind: Service
-          name: bankapp-service
-          port: 8080
-          weight: 1
----
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: BackendTrafficPolicy
-metadata:
-  name: bankapp-session
-  namespace: bankapp
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: bankapp-route
-  loadBalancer:
-    type: ConsistentHash
-    consistentHash:
-      type: Cookie
-      cookie:
-        name: BANKAPP_AFFINITY
-        ttl: 3600s
-EOF
+# Update gateway.yml with production domain
+print_info "Updating k8s/gateway.yml..."
+sed -i.tmp "s/hostname: .*/hostname: $PROD_DOMAIN/" k8s/gateway.yml
+sed -i.tmp "s/- .*\.aicloudops\.in/- $PROD_DOMAIN/" k8s/gateway.yml
+rm -f k8s/gateway.yml.tmp
 
-print_success "Production configuration created"
+# Update certificate.yml with production domain and production issuer
+print_info "Updating k8s/certificate.yml..."
+sed -i.tmp "s/name: letsencrypt-staging/name: letsencrypt-prod/" k8s/certificate.yml
+sed -i.tmp "s/- .*\.aicloudops\.in/- $PROD_DOMAIN/" k8s/certificate.yml
+rm -f k8s/certificate.yml.tmp
+
+# Commit and push changes
+print_info "Committing changes to git..."
+git add k8s/gateway.yml k8s/certificate.yml
+git commit -m "Update to production environment: $PROD_DOMAIN with production certificates" || {
+    print_info "No changes to commit (already up to date)"
+}
+
+print_info "Pushing changes to git..."
+CURRENT_BRANCH=$(git branch --show-current)
+git push origin "$CURRENT_BRANCH" || {
+    print_warning "Failed to push to git. Continuing with local changes..."
+}
+
+print_success "Configuration files updated and pushed to git"
 
 # Step 6: Deploy via ArgoCD or kubectl
 print_step "Step 6: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
+    print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
+    sleep 30
     kubectl patch application bankapp -n argocd --type merge \
       -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
-    sleep 30
+    print_info "Waiting for ArgoCD sync to complete..."
+    sleep 60
 else
     print_info "ArgoCD not found, using kubectl..."
     kubectl apply -f k8s/namespace.yml
@@ -280,11 +219,7 @@ for i in {1..30}; do
     sleep 2
 done
 
-# Step 7: Apply production gateway and certificate
-print_step "Step 7: Applying Production Gateway and Certificate"
-kubectl apply -f /tmp/prod-gateway.yml
-kubectl apply -f /tmp/prod-certificate.yml
-print_success "Production resources applied"
+print_success "Application deployed with production configuration"
 
 # Step 8: Get LoadBalancer IP
 print_step "Step 8: Getting LoadBalancer IP"

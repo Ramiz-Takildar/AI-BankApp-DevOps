@@ -153,95 +153,52 @@ print_step "Step 4: Applying STAGING ClusterIssuer"
 kubectl apply -f k8s/cert-manager-staging.yml
 print_success "Staging ClusterIssuer applied"
 
-# Step 5: Update test configuration
-print_step "Step 5: Configuring Test Domain"
+# Step 5: Update test configuration and push to git
+print_step "Step 5: Updating Configuration Files for Test Domain"
 print_info "Test domain: $TEST_DOMAIN"
 
-# Create temporary test certificate
-cat > /tmp/test-certificate.yml << EOF
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: bankapp-tls
-  namespace: bankapp
-spec:
-  secretName: bankapp-tls
-  issuerRef:
-    name: letsencrypt-staging
-    kind: ClusterIssuer
-  dnsNames:
-    - $TEST_DOMAIN
-EOF
+# Backup current files
+print_info "Creating backup of current configuration..."
+cp k8s/gateway.yml k8s/gateway.yml.backup
+cp k8s/certificate.yml k8s/certificate.yml.backup
 
-# Create temporary test gateway
-cat > /tmp/test-gateway.yml << EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: bankapp-gateway
-  namespace: bankapp
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
-        namespaces:
-          from: All
-    - name: https
-      protocol: HTTPS
-      port: 443
-      hostname: $TEST_DOMAIN
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - group: ""
-            kind: Secret
-            name: bankapp-tls
-      allowedRoutes:
-        namespaces:
-          from: Same
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: bankapp-route
-  namespace: bankapp
-spec:
-  hostnames:
-    - $TEST_DOMAIN
-  parentRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: bankapp-gateway
-      sectionName: https
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: bankapp-gateway
-      sectionName: http
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - group: ""
-          kind: Service
-          name: bankapp-service
-          port: 8080
-          weight: 1
-EOF
+# Update gateway.yml with test domain
+print_info "Updating k8s/gateway.yml..."
+sed -i.tmp "s/hostname: .*/hostname: $TEST_DOMAIN/" k8s/gateway.yml
+sed -i.tmp "s/- bankapp.*\.aicloudops\.in/- $TEST_DOMAIN/" k8s/gateway.yml
+rm -f k8s/gateway.yml.tmp
 
-print_success "Test configuration created"
+# Update certificate.yml with test domain and staging issuer
+print_info "Updating k8s/certificate.yml..."
+sed -i.tmp "s/name: letsencrypt-prod/name: letsencrypt-staging/" k8s/certificate.yml
+sed -i.tmp "s/- bankapp.*\.aicloudops\.in/- $TEST_DOMAIN/" k8s/certificate.yml
+rm -f k8s/certificate.yml.tmp
+
+# Commit and push changes
+print_info "Committing changes to git..."
+git add k8s/gateway.yml k8s/certificate.yml
+git commit -m "Update to test environment: $TEST_DOMAIN with staging certificates" || {
+    print_info "No changes to commit (already up to date)"
+}
+
+print_info "Pushing changes to git..."
+CURRENT_BRANCH=$(git branch --show-current)
+git push origin "$CURRENT_BRANCH" || {
+    print_warning "Failed to push to git. Continuing with local changes..."
+}
+
+print_success "Configuration files updated and pushed to git"
 
 # Step 6: Deploy via ArgoCD or kubectl
 print_step "Step 6: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
+    print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
+    sleep 30
     kubectl patch application bankapp -n argocd --type merge \
       -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
-    sleep 30
+    print_info "Waiting for ArgoCD sync to complete..."
+    sleep 60
 else
     print_info "ArgoCD not found, using kubectl..."
     kubectl apply -f k8s/namespace.yml
@@ -256,11 +213,7 @@ for i in {1..30}; do
     sleep 2
 done
 
-# Step 7: Apply test gateway and certificate
-print_step "Step 7: Applying Test Gateway and Certificate"
-kubectl apply -f /tmp/test-gateway.yml
-kubectl apply -f /tmp/test-certificate.yml
-print_success "Test resources applied"
+print_success "Application deployed with test configuration"
 
 # Step 8: Get LoadBalancer IP
 print_step "Step 8: Getting LoadBalancer IP"
