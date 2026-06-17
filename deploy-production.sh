@@ -195,8 +195,25 @@ git push origin "$CURRENT_BRANCH" || {
 
 print_success "Configuration files updated and pushed to git"
 
-# Step 6: Deploy via ArgoCD or kubectl
-print_step "Step 6: Deploying Application"
+# Step 6: Get ArgoCD Access Information
+print_step "Step 6: ArgoCD Access Information"
+if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
+    ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+    ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
+    
+    echo ""
+    echo -e "${GREEN}ArgoCD Access:${NC}"
+    echo -e "  URL: ${BLUE}http://$ARGOCD_URL${NC}"
+    echo -e "  Username: ${GREEN}admin${NC}"
+    echo -e "  Password: ${GREEN}$ARGOCD_PASSWORD${NC}"
+    echo ""
+    print_success "ArgoCD credentials retrieved"
+else
+    print_warning "ArgoCD not found in cluster"
+fi
+
+# Step 7: Deploy via ArgoCD or kubectl
+print_step "Step 7: Deploying Application"
 if kubectl get application bankapp -n argocd >/dev/null 2>&1; then
     print_info "Using ArgoCD deployment..."
     print_info "Waiting for ArgoCD to detect changes (30 seconds)..."
