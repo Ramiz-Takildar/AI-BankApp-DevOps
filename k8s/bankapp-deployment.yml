@@ -3,8 +3,10 @@ kind: Deployment
 metadata:
   name: bankapp
   namespace: bankapp
+  annotations:
+    argocd.argoproj.io/sync-options: "RespectIgnoreDifferences=true"
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: bankapp
