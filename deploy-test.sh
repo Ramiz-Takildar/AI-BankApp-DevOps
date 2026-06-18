@@ -108,11 +108,39 @@ fi
 if is_step_completed 2; then
     print_info "Step 2 already completed, skipping..."
 else
-    print_step "Step 2: Installing Envoy Gateway"
+    print_step "Step 2: Installing Envoy Gateway CRDs"
     
+    # Check if BackendTrafficPolicy CRD already exists
+    if kubectl get crd backendtrafficpolicies.gateway.envoyproxy.io >/dev/null 2>&1; then
+        print_info "BackendTrafficPolicy CRD already installed"
+    else
+        print_info "Installing Envoy Gateway CRDs using server-side apply..."
+        kubectl apply --server-side -f https://github.com/envoyproxy/gateway/releases/download/v1.2.6/install.yaml
+        
+        # Wait for CRDs to be established
+        print_info "Waiting for BackendTrafficPolicy CRD to be established..."
+        for i in {1..30}; do
+            if kubectl get crd backendtrafficpolicies.gateway.envoyproxy.io >/dev/null 2>&1; then
+                print_success "BackendTrafficPolicy CRD is ready"
+                break
+            fi
+            echo -n "."
+            sleep 2
+        done
+        echo ""
+        
+        # Verify CRD is installed
+        if ! kubectl get crd backendtrafficpolicies.gateway.envoyproxy.io >/dev/null 2>&1; then
+            print_error "BackendTrafficPolicy CRD failed to install"
+            exit 1
+        fi
+    fi
+    
+    # Verify Envoy Gateway is running
     if helm list -n envoy-gateway-system 2>/dev/null | grep -q "^eg"; then
         print_info "Envoy Gateway already installed"
     else
+        print_info "Envoy Gateway not found, installing..."
         helm install eg oci://docker.io/envoyproxy/gateway-helm \
           --version v1.2.6 \
           -n envoy-gateway-system \
@@ -120,8 +148,8 @@ else
           --skip-crds
     fi
     
-    wait_for_pods "envoy-gateway-system" "app.kubernetes.io/name=gateway-helm" 60
-    print_success "Envoy Gateway installed"
+    wait_for_pods "envoy-gateway-system" "app.kubernetes.io/name=gateway-helm" 120
+    print_success "Envoy Gateway CRDs installed and verified"
     save_checkpoint 2
 fi
 
@@ -170,10 +198,11 @@ print_info "Creating backup of current configuration..."
 cp k8s/gateway.yml k8s/gateway.yml.backup
 cp k8s/certificate.yml k8s/certificate.yml.backup
 
-# Update gateway.yml with test domain
+# Update gateway.yml with test domain and staging issuer annotation
 print_info "Updating k8s/gateway.yml..."
 sed -i.tmp "s/hostname: .*/hostname: $TEST_DOMAIN/" k8s/gateway.yml
 sed -i.tmp "s/- bankapp.*\.aicloudops\.in/- $TEST_DOMAIN/" k8s/gateway.yml
+sed -i.tmp "s/cert-manager.io\/cluster-issuer: letsencrypt-prod/cert-manager.io\/cluster-issuer: letsencrypt-staging/" k8s/gateway.yml
 rm -f k8s/gateway.yml.tmp
 
 # Update certificate.yml with test domain and staging issuer
@@ -218,12 +247,22 @@ print_success "Docker image confirmation received"
     save_checkpoint 6
 fi
 
-# Step 7: Get ArgoCD Access Information
+# Step 7: Setup ArgoCD Application
 if is_step_completed 7; then
     print_info "Step 7 already completed, skipping..."
 else
-    print_step "Step 7: ArgoCD Access Information"
+    print_step "Step 7: Setting up ArgoCD Application"
 if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
+    # Create ArgoCD application if it doesn't exist
+    if ! kubectl get application bankapp -n argocd >/dev/null 2>&1; then
+        print_info "Creating ArgoCD application..."
+        kubectl apply -f argocd/application.yml
+        sleep 5
+        print_success "ArgoCD application created"
+    else
+        print_info "ArgoCD application already exists"
+    fi
+    
     ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
     ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
     
@@ -233,7 +272,7 @@ if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     echo -e "  Username: ${GREEN}admin${NC}"
     echo -e "  Password: ${GREEN}$ARGOCD_PASSWORD${NC}"
     echo ""
-    print_success "ArgoCD credentials retrieved"
+    print_success "ArgoCD setup complete"
 else
     print_warning "ArgoCD not found in cluster"
 fi
