@@ -38,6 +38,9 @@ build/
 *.tfstate.backup
 *.tfplan
 
+### Deployment Script Backups ###
+*.backup
+
 ### Claude ###
 CLAUDE.md
 
