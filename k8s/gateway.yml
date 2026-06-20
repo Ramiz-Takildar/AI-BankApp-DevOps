@@ -14,7 +14,7 @@ metadata:
   name: bankapp-gateway
   namespace: bankapp
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   gatewayClassName: envoy-gateway
   listeners:
@@ -31,7 +31,7 @@ spec:
     - name: https
       protocol: HTTPS
       port: 443
-      hostname: test.aicloudops.in
+      hostname: aibankapp.aicloudops.in
       tls:
         mode: Terminate
         certificateRefs:
@@ -49,7 +49,7 @@ metadata:
   namespace: bankapp
 spec:
   hostnames:
-    - test.aicloudops.in
+    - aibankapp.aicloudops.in
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
